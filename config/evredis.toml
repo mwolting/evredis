@@ -8,5 +8,5 @@ debug_info = false
 
 [server]
 listen_on = [
-    "127.0.0.1:8888"
+    "127.0.0.1:6379"
 ]

@@ -14,6 +14,8 @@ pub struct LoggingConfiguration {
     format: Format,
     level: Option<String>,
     filter: Option<String>,
+    forward_stdlog: bool,
+    stdlog_level: Option<String>,
     debug_info: bool,
 }
 
@@ -23,6 +25,8 @@ impl Default for LoggingConfiguration {
             format: Format::Full,
             level: Some("warn".into()),
             filter: None,
+            forward_stdlog: true,
+            stdlog_level: Some("info".into()),
             debug_info: false,
         }
     }
@@ -53,7 +57,7 @@ impl LoggingConfiguration {
         if let Some(ref level) = self.level {
             filter = filter.filter(
                 None,
-                str::parse::<slog::FilterLevel>(level).unwrap_or(slog::FilterLevel::Warning),
+                level.parse::<slog::FilterLevel>().unwrap_or(slog::FilterLevel::Warning),
             );
         };
         if let Some(ref filter_expr) = self.filter {
@@ -85,8 +89,19 @@ impl LoggingConfiguration {
         }
     }
 
-    pub fn create_global_logger(&self) -> slog_scope::GlobalLoggerGuard {
+    pub fn create_global_logger(
+        &self,
+    ) -> Result<slog_scope::GlobalLoggerGuard, log::SetLoggerError> {
         let logger = self.create_logger();
-        slog_scope::set_global_logger(logger)
+        let guard = slog_scope::set_global_logger(logger);
+        if self.forward_stdlog {
+            if let Some(ref level) = self.stdlog_level {
+                slog_stdlog::init_with_level(level.parse::<log::LogLevel>().unwrap_or(log::LogLevel::Info))?;
+            } else {
+                slog_stdlog::init()?;
+            }
+        }
+
+        Ok(guard)
     }
 }

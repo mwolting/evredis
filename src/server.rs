@@ -38,7 +38,7 @@ impl ServerConfiguration {
 pub fn start(addr: impl ToSocketAddrs) -> io::Result<Addr<Server>> {
     Ok(Server::default()
         .bind("evredis", addr, move || {
-            let codec = resp2::Codec::default();
+            let codec = resp2::StreamCodec::default();
 
             info!("Spawning new worker");
             (move |stream| {

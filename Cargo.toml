@@ -18,15 +18,17 @@ config = "0.9"
 serde = "1.0"
 serde_derive = "1.0"
 
+log = "0.3"
 slog = "2.4"
 slog-async = "2.3"
 slog-envlogger = "2.1"
 slog-json = "2.3"
 slog-scope = "4.1"
-slog-stdlog = "3.0"
+slog-stdlog = { git = "https://github.com/slog-rs/stdlog.git" }
 slog-term = "2.4"
 
 quick-error = "1.2"
+smallvec = "0.6"
 
 clap = "2.32"
 structopt = "0.2"
