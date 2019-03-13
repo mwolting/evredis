@@ -1,0 +1,4 @@
+[logging]
+format = "compact"
+level = "debug"
+debug_info = true

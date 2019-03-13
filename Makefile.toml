@@ -1,0 +1,102 @@
+[tasks.format]
+workspace = false
+command = "cargo"
+args = [
+    "fmt",
+    "--all"
+]
+
+[tasks.format-check]
+workspace = false
+command = "cargo"
+args = [
+    "fmt",
+    "--all",
+    "--",
+    "--check"
+]
+
+[tasks.clippy]
+workspace = false
+command = "cargo"
+args = [
+    "clippy",
+    "--all",
+    "--",
+    "-D",
+    "warnings"
+]
+
+[tasks.test]
+clear = true
+workspace = false
+command = "cargo"
+args = [
+    "test",
+    "--all",
+    "--",
+    "--nocapture"
+]
+
+[tasks.docs]
+clear = true
+workspace = false
+command = "cargo"
+args = [
+    "doc",
+    "--all",
+    "--no-deps"
+]
+
+
+[tasks.package-release]
+workspace = false
+script = [
+'''
+rm -rf target/package/release
+mkdir -p target/package/release/bin
+mkdir -p target/package/release/config
+cp config/evredis.toml target/package/release/config
+cp target/release/evredis target/package/release/bin
+'''
+]
+dependencies = ["build-release"]
+
+[tasks.package-release.windows]
+script = [
+'''
+rmdir /S /Q target\package\release
+mkdir target\package\release\bin
+mkdir target\package\release\config
+xcopy config\evredis.toml target\package\release\config
+xcopy target\release\evredis.exe target\package\release\bin
+'''
+]
+
+
+[tasks.default]
+clear = true
+workspace = false
+alias = "check-flow"
+
+[tasks.check-flow]
+clear = true
+workspace = false
+dependencies = [
+    "format-check",
+    "clippy",
+    "test"
+]
+
+[tasks.release-flow]
+workspace = false
+dependencies = [
+    "package-release"
+]
+
+[tasks.check-release-flow]
+workspace = false
+dependencies = [
+    "check-flow",
+    "release-flow"
+]

@@ -1,0 +1,39 @@
+[package]
+name = "evredis"
+version = "0.1.0"
+authors = ["Matthijs Wolting <matthijswolting@gmail.com>"]
+edition = "2018"
+
+
+[[bin]]
+name = "evredis"
+path = "src/bin/evredis.rs"
+
+
+[dependencies]
+app_dirs = "1.2"
+dotenv = "0.13"
+
+config = "0.9"
+serde = "1.0"
+serde_derive = "1.0"
+
+slog = "2.4"
+slog-async = "2.3"
+slog-envlogger = "2.1"
+slog-json = "2.3"
+slog-scope = "4.1"
+slog-stdlog = "3.0"
+slog-term = "2.4"
+
+clap = "2.32"
+structopt = "0.2"
+
+actix = "0.7"
+actix-net = "0.2"
+futures = "0.1"
+
+nom = "0.4"
+
+semver = { version = "0.9", features = ["serde"] }
+

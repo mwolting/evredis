@@ -1,0 +1,38 @@
+use serde_derive::Deserialize;
+
+use slog::slog_info;
+use slog_scope::info;
+
+use actix::System;
+
+use evredis::utils::configuration::Configuration;
+use evredis::utils::logging::LoggingConfiguration;
+
+
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(default)]
+struct RootConfiguration {
+    logging: LoggingConfiguration,
+}
+impl Configuration for RootConfiguration {
+    const VERSION_REQUIREMENT: &'static str = "^0.1";
+}
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+fn main() -> Result<(), Box<std::error::Error>> {
+    let config = RootConfiguration::load()?;
+    let handle = config.logging.create_global_logger();
+
+    let system = System::new("evredis");
+
+    info!("evredis v{}", VERSION);
+
+
+    let code = system.run();
+
+    info!("Shutting down...");
+    drop(handle);
+    std::process::exit(code);
+}
+
