@@ -26,12 +26,17 @@ slog-scope = "4.1"
 slog-stdlog = "3.0"
 slog-term = "2.4"
 
+quick-error = "1.2"
+
 clap = "2.32"
 structopt = "0.2"
 
 actix = "0.7"
 actix-net = "0.2"
+bytes = "0.4"
 futures = "0.1"
+tokio-codec = "0.1"
+tokio-io = "0.1"
 
 nom = "0.4"
 

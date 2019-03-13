@@ -5,14 +5,15 @@ use slog_scope::info;
 
 use actix::System;
 
+use evredis::server::ServerConfiguration;
 use evredis::utils::configuration::Configuration;
 use evredis::utils::logging::LoggingConfiguration;
-
 
 #[derive(Debug, Default, Clone, Deserialize)]
 #[serde(default)]
 struct RootConfiguration {
     logging: LoggingConfiguration,
+    server: ServerConfiguration,
 }
 impl Configuration for RootConfiguration {
     const VERSION_REQUIREMENT: &'static str = "^0.1";
@@ -28,6 +29,7 @@ fn main() -> Result<(), Box<std::error::Error>> {
 
     info!("evredis v{}", VERSION);
 
+    config.server.start_server()?;
 
     let code = system.run();
 
@@ -35,4 +37,3 @@ fn main() -> Result<(), Box<std::error::Error>> {
     drop(handle);
     std::process::exit(code);
 }
-
