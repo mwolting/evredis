@@ -1,3 +1,5 @@
+//! Underlying key/value storage
+
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use quick_error::quick_error;
@@ -13,19 +15,24 @@ pub mod reader;
 pub mod writer;
 
 quick_error! {
+    /// An error encountered during storage operations
     #[derive(Debug)]
     pub enum StorageError {
+        /// The storage actor doesn't have write permissions
         NoWriteAccess {
             display("No write access")
         }
+        /// The storage actor doesn't have read permissions
         NoReadAccess {
             display("No read access")
         }
     }
 }
 
+/// A storage key
 pub type Key = Bytes;
 
+/// A storage value
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {
     String(Bytes),
@@ -49,6 +56,7 @@ impl ShallowCopy for Value {
     }
 }
 
+/// A storage operation that can be processed by storage actors
 #[derive(Debug, Message)]
 #[rtype(result = "Result<Response, StorageError>")]
 pub struct Operation {

@@ -1,3 +1,5 @@
+//! Database writer actor
+//!
 use super::*;
 
 use slog::slog_info;
@@ -11,12 +13,14 @@ use actix::prelude::*;
 
 use crate::protocol::{Command, Response};
 
+/// An actor that wraps a database reader handle
 pub struct Writer {
     reader: ReadHandle<Key, Value>,
     writer: WriteHandle<Key, Value>,
 }
 
 impl Writer {
+    /// Construct a new writer for the given handle
     pub fn new(store: WriteHandle<Key, Value>) -> Self {
         Writer {
             reader: store.clone(),
@@ -64,9 +68,11 @@ impl Handler<Operation> for Writer {
     }
 }
 
+/// A subscription request to get a reader handle for a `Writer`'s dataset
 #[derive(Debug, Message)]
 #[rtype(result = "Subscription")]
 pub struct Subscribe;
 
+/// A reader handle for a `Writer`'s dataset
 #[derive(MessageResponse)]
 pub struct Subscription(pub ReadHandle<Key, Value>);

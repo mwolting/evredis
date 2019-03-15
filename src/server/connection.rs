@@ -1,3 +1,5 @@
+//! The connection handler
+
 use std::io;
 
 use slog::{slog_debug, slog_info, slog_o, Logger};
@@ -18,24 +20,30 @@ use crate::storage::writer::Writer;
 use crate::storage::{Operation, StorageError};
 
 quick_error! {
+    /// An error encountered during connection handling
     #[derive(Debug)]
     pub enum ConnectionError {
+        /// An IO error
         Io(err: io::Error) {
             display("IO error: {}", err)
             from()
         }
+        /// A response encoding error
         ResponseEncoding(err: EncodeError) {
             display("Failed to encode response: {}", err)
             from()
         }
+        /// A command decoding error
         CommandDecoding(err: DecodeError) {
             display("Failed to decode command: {}", err)
             from()
         }
+        /// A storage operation error
         Storage(err: StorageError) {
             display("Failed to execute storage operation: {}", err)
             from()
         }
+        /// An actor mailbox capacity error
         Mailbox(err: actix::MailboxError) {
             display("Mailbox error: {}", err)
             from()
@@ -43,45 +51,56 @@ quick_error! {
     }
 }
 
-pub struct Connection<T>
+/// A connection handler
+pub struct Connection<R, T>
 where
-    T: Stream<Item = Command, Error = ConnectionError>,
+    R: Stream<Item = Command, Error = ConnectionError>,
     T: Sink<SinkItem = Response, SinkError = ConnectionError>,
 {
+    /// The connection identifier (useful for log correlation)
     id: Uuid,
-    stream: T,
+    /// The command stream to listen on
+    rx: R,
+    /// The response sink to respond on
+    tx: T,
+    /// A scoped logger
     logger: Logger,
+    /// Address of the `Reader` actor to use
     reader: Addr<Reader>,
+    /// Address of the `writer` actor to use
     writer: Addr<Writer>,
 }
 
-impl<T> Connection<T>
+impl<R, T> Connection<R, T>
 where
-    T: Stream<Item = Command, Error = ConnectionError>,
+    R: Stream<Item = Command, Error = ConnectionError>,
     T: Sink<SinkItem = Response, SinkError = ConnectionError>,
 {
-    pub fn new(stream: T, reader: Addr<Reader>, writer: Addr<Writer>) -> Self {
+    /// Create a new connection handler for the given input/output and reader/writer
+    pub fn new(rx: R, tx: T, reader: Addr<Reader>, writer: Addr<Writer>) -> Self {
         let id = Uuid::new_v4();
         let logger = slog_scope::logger().new(slog_o!("connection" => format!("{}", id)));
         slog_info!(logger, "Opening connection");
         Connection {
             id,
-            stream,
+            rx,
+            tx,
             logger,
             reader,
             writer,
         }
     }
 
+    /// Process the input stream's commands to completion
     pub fn run(self) -> impl Future<Item = (), Error = ConnectionError> {
         let Connection {
-            stream,
+            rx,
+            tx,
             logger,
             id,
             reader,
             writer,
         } = self;
-        let (tx, rx) = stream.split();
 
         rx.and_then(move |cmd| {
             slog_debug!(logger, "Processing command {:?}", cmd);
@@ -100,6 +119,7 @@ where
     }
 }
 
+/// Create and run a connection handler for the given bi-directional byte stream, codec, and reader/writer
 pub fn accept<S, D>(
     stream: S,
     codec: D,
@@ -111,8 +131,8 @@ where
     D: Decoder<Item = Command, Error = ConnectionError>,
     D: Encoder<Item = Response, Error = ConnectionError>,
 {
-    let framed = codec.framed(stream);
-    let conn = Connection::new(framed, reader, writer);
+    let (tx, rx) = codec.framed(stream).split();
+    let conn = Connection::new(rx, tx, reader, writer);
 
     conn.run()
 }

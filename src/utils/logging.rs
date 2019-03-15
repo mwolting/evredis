@@ -1,23 +1,37 @@
+//! Utilities related to logging
+
 use serde_derive::Deserialize;
 use slog::{o, Drain};
 
+/// A logging output format
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
 pub enum Format {
+    /// Full (line-by-line) text
     Full,
+    /// Compact (grouped by context) text
     Compact,
+    /// JSON records
     Json,
 }
 
+/// A configuration to construct loggers from
 #[derive(Debug, Deserialize, Clone)]
 #[serde(default)]
 pub struct LoggingConfiguration {
-    format: Format,
-    level: Option<String>,
-    filter: Option<String>,
-    forward_stdlog: bool,
-    stdlog_level: Option<String>,
-    with_module: bool,
-    with_filename: bool,
+    /// Output format
+    pub format: Format,
+    /// Minimum level (application-wide)
+    pub level: Option<String>,
+    /// Filter expression (env-logger compatible)
+    pub filter: Option<String>,
+    /// Whether to forward `log` crate messages
+    pub forward_stdlog: bool,
+    /// Minimum level (`log` crate messages)
+    pub stdlog_level: Option<String>,
+    /// Whether to include the module name in the logging context
+    pub with_module: bool,
+    /// Whether to include the file name and line number in the logging context
+    pub with_filename: bool,
 }
 
 impl Default for LoggingConfiguration {
@@ -71,6 +85,7 @@ impl LoggingConfiguration {
         slog_async::Async::new(filter.build().fuse()).build().fuse()
     }
 
+    /// Construct a new `Logger` that adheres to the configuration
     pub fn create_logger(&self) -> slog::Logger {
         let module = slog::FnValue(move |info| info.module());
         let filename = slog::FnValue(move |info| format!("{}:{}", info.file(), info.line()));
@@ -86,6 +101,9 @@ impl LoggingConfiguration {
         }
     }
 
+    /// Set up a global logger that adheres to the configuration
+    ///
+    /// This also includes initializing the `log` crate to use the logger.
     pub fn create_global_logger(
         &self,
     ) -> Result<slog_scope::GlobalLoggerGuard, log::SetLoggerError> {

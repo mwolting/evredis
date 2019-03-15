@@ -1,3 +1,5 @@
+//! Codecs for Redis commands/responses
+
 use std::io;
 use std::marker::PhantomData;
 use std::num::ParseIntError;
@@ -16,6 +18,7 @@ use crate::protocol::{Command, Response};
 pub mod resp2;
 
 quick_error! {
+    /// An error encountered during value encoding
     #[derive(Debug)]
     pub enum EncodeError {
         Dummy {}
@@ -23,19 +26,27 @@ quick_error! {
 }
 
 quick_error! {
+    /// An error encountered during value decoding
     #[derive(Debug)]
     pub enum DecodeError {
+        /// Unexpected byte at the current position
         UnexpectedByte(byte: u8) {
             display("Unexpected byte: {}", byte)
         }
+        /// Unrecognized Redis command
         UnrecognizedCommand {}
+        /// Unexpected number of arguments to a command
         UnexpectedNumberOfArguments {}
+        /// Invalid length value for bulk string/array
         InvalidLength {}
+        /// Invalid datatype for command
         InvalidDataType {}
+        /// Invalid string value
         InvalidString(err: Utf8Error) {
             display("Invalid string: {}", err)
             from()
         }
+        /// Invalid integer value
         InvalidInteger(err: ParseIntError) {
             display("Invalid integer: {}", err)
             from()
@@ -43,11 +54,13 @@ quick_error! {
     }
 }
 
+/// A codec that translates between high-level Redis commands/responses and a low-level wire format
 pub trait ProtocolCodec {
     fn decode_from(buffer: &mut BytesMut) -> Result<Option<Command>, DecodeError>;
     fn encode_to(response: Response, buffer: &mut BytesMut) -> Result<(), EncodeError>;
 }
 
+/// A stream codec for framing bidirectional byte streams as command/response streams
 #[derive(Debug)]
 pub struct StreamCodec<P, E>
 where
@@ -114,7 +127,7 @@ where
     type Error = E;
 
     fn decode(&mut self, buffer: &mut BytesMut) -> Result<Option<Command>, E> {
-        if buffer.len() == 0 {
+        if buffer.is_empty() {
             return Ok(None);
         }
 

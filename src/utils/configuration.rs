@@ -1,5 +1,6 @@
-use std::error;
-use std::fmt;
+//! Utilities related to configuration loading
+
+use quick_error::quick_error;
 
 use app_dirs::*;
 use config::{Config, ConfigError, Environment, File};
@@ -8,40 +9,33 @@ use serde_derive::{Deserialize, Serialize};
 
 use semver::{Version, VersionReq};
 
-#[derive(Debug)]
-pub enum ConfigurationError {
-    LoadFailure(ConfigError),
-    MissingLocation(app_dirs::AppDirsError),
-    IncompatibleVersion(Version, VersionReq),
-}
-impl fmt::Display for ConfigurationError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ConfigurationError::LoadFailure(err) => write!(f, "Load failure: {}", err),
-            ConfigurationError::MissingLocation(err) => write!(f, "Missing location: {}", err),
-            ConfigurationError::IncompatibleVersion(actual, expected) => write!(
-                f,
-                "Configuration of version {} incompatible with requirement {}",
-                actual, expected
-            ),
+quick_error! {
+    /// An error encountered during configuration loading
+    #[derive(Debug)]
+    pub enum ConfigurationError {
+        /// Failed to load configuration
+        LoadFailure(err: ConfigError) {
+            display("Load failure: {}", err)
+            from()
+        }
+        /// Failed to find configuration location
+        MissingLocation(err: app_dirs::AppDirsError) {
+            display("Missing location: {}", err)
+            from()
+        }
+        /// Version mismatch between configuration and application
+        IncompatibleVersion(actual: Version, expected: VersionReq) {
+            display("Configuration of version {} is incompatible with requirement {}", actual, expected)
         }
     }
 }
-impl error::Error for ConfigurationError {}
-impl From<ConfigError> for ConfigurationError {
-    fn from(err: ConfigError) -> Self {
-        ConfigurationError::LoadFailure(err)
-    }
-}
-impl From<app_dirs::AppDirsError> for ConfigurationError {
-    fn from(err: app_dirs::AppDirsError) -> Self {
-        ConfigurationError::MissingLocation(err)
-    }
-}
 
+/// A configuration that can be loaded from multiple layers (files and environment)
 pub trait Configuration: DeserializeOwned {
+    /// A semver version requirement on the loaded configuration
     const VERSION_REQUIREMENT: &'static str = "*";
 
+    /// Load a configuration from the environment only
     fn load_env() -> Result<Self, ConfigurationError> {
         let _ = dotenv::dotenv();
 
@@ -55,6 +49,11 @@ pub trait Configuration: DeserializeOwned {
         Ok(s.try_into()?)
     }
 
+    /// Load a configuration from the environment and several files
+    ///
+    /// Default locations include the system-wide and user-specific configuration dirs
+    /// (different per OS), and (if the EVREDIS_DEBUG environment variable is set) the `config`
+    /// directory in the current working dir.
     fn load() -> Result<Self, ConfigurationError> {
         let version_req =
             VersionReq::parse(Self::VERSION_REQUIREMENT).expect("Invalid version requirement");
@@ -111,6 +110,7 @@ pub trait Configuration: DeserializeOwned {
     }
 }
 
+/// A configuration metadata section
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MetaConfiguration {

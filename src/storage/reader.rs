@@ -1,3 +1,5 @@
+//! Database reader actor
+
 use super::*;
 
 use slog::slog_info;
@@ -9,11 +11,13 @@ use actix::prelude::*;
 
 use crate::protocol::{Command, Error, Response};
 
+/// An actor that wraps a database reader handle
 pub struct Reader {
     store: Option<ReadHandle<Key, Value>>,
 }
 
 impl Reader {
+    /// Construct a new reader for the given handle
     pub fn new(store: ReadHandle<Key, Value>) -> Self {
         Reader { store: Some(store) }
     }

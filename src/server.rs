@@ -1,3 +1,5 @@
+//! The evredis server and its configuration
+
 use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
 
@@ -17,9 +19,11 @@ use crate::storage::writer::Writer;
 
 pub mod connection;
 
+/// Configuration for an evredis server
 #[derive(Debug, Deserialize, Clone)]
 pub struct ServerConfiguration {
-    listen_on: Vec<SocketAddr>,
+    /// The interfaces to listen on
+    pub listen_on: Vec<SocketAddr>,
 }
 impl Default for ServerConfiguration {
     fn default() -> Self {
@@ -32,11 +36,15 @@ impl Default for ServerConfiguration {
     }
 }
 impl ServerConfiguration {
+    /// Spawn a server actor
+    ///
+    /// This may fail if the server cannot bind on the configured interfaces
     pub fn start_server(&self) -> io::Result<Addr<Server>> {
         start(&self.listen_on[..])
     }
 }
 
+/// Spawn a server actor on the given interfaces
 pub fn start(addr: impl ToSocketAddrs) -> io::Result<Addr<Server>> {
     Ok(Server::default()
         .bind("evredis", addr, move || {

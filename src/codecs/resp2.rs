@@ -1,3 +1,5 @@
+//! Command/response codec implementation for the [Redis Serialization Protocol v2 (RESP2)](https://redis.io/topics/protocol).
+
 use std::mem;
 
 use slog::{slog_debug, slog_trace};
@@ -9,7 +11,8 @@ use crate::protocol::{Command, Error, Response};
 
 use super::{DecodeError, EncodeError, ProtocolCodec};
 
-#[derive(Debug, Clone)]
+/// A primitive protocol value
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {
     SimpleString(Bytes),
     Error(Bytes),
@@ -19,8 +22,10 @@ pub enum Value {
     Nil,
 }
 impl<'a> Value {
+    /// Try to read a `Value` from a byte buffer. Will return `Ok(None)` if an incomplete but so far correct
+    /// value is encountered, or `Err(DecodeError)` in case of invalid data.
     fn read_from(buffer: &mut BytesMut) -> Result<Option<Self>, DecodeError> {
-        if buffer.len() == 0 {
+        if buffer.is_empty() {
             return Ok(None);
         }
 
@@ -38,7 +43,7 @@ impl<'a> Value {
             if buffer[pos + 1] != b'\n' {
                 return Err(DecodeError::UnexpectedByte(buffer[pos + 1]));
             }
-            return Ok(Some(buffer.split_to(pos + 2)));
+            Ok(Some(buffer.split_to(pos + 2)))
         }
 
         debug!("Attempting to parse RESPv2 value");
@@ -137,6 +142,7 @@ impl<'a> Value {
         }
     }
 
+    /// Try to write a `Value` to a byte buffer.
     fn write_to(self, buffer: &mut BytesMut) -> Result<(), EncodeError> {
         match self {
             Value::Nil => {
@@ -197,16 +203,16 @@ impl ProtocolCodec for Value {
                     Value::SimpleString(ref command) | Value::BulkString(ref command) => {
                         match command.as_ref() {
                             b"PING" => match &elems[1..] {
-                                &[] => Command::Ping(None),
-                                &[Value::BulkString(ref msg)] => Command::Ping(Some(msg.clone())),
+                                [] => Command::Ping(None),
+                                [Value::BulkString(ref msg)] => Command::Ping(Some(msg.clone())),
                                 _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
                             },
                             b"GET" => match &elems[1..] {
-                                &[Value::BulkString(ref key)] => Command::Get(key.clone()),
+                                [Value::BulkString(ref key)] => Command::Get(key.clone()),
                                 _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
                             },
                             b"SET" => match &elems[1..] {
-                                &[Value::BulkString(ref key), Value::BulkString(ref value)] => {
+                                [Value::BulkString(ref key), Value::BulkString(ref value)] => {
                                     Command::Set(key.clone(), value.clone())
                                 }
                                 _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
@@ -241,4 +247,144 @@ impl ProtocolCodec for Value {
     }
 }
 
+/// StreamCodec for the RESP2 protocol
 pub type StreamCodec<E> = super::StreamCodec<Value, E>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use bytes::{Bytes, BytesMut};
+
+    #[test]
+    fn codec_can_encode_simple_strings() {
+        let mut data = BytesMut::new();
+        Value::SimpleString(Bytes::from("TEST"))
+            .write_to(&mut data)
+            .unwrap();
+
+        assert_eq!(&data[..], b"+TEST\r\n");
+    }
+
+    #[test]
+    fn codec_can_decode_simple_strings() {
+        let mut data = BytesMut::from("+TEST\r\n");
+        let decoded = Value::read_from(&mut data).expect("Failed to decode simple string");
+        assert_eq!(decoded, Some(Value::SimpleString(Bytes::from("TEST"))));
+    }
+
+    #[test]
+    fn codec_can_encode_errors() {
+        let mut data = BytesMut::new();
+        Value::Error(Bytes::from("TEST"))
+            .write_to(&mut data)
+            .unwrap();
+
+        assert_eq!(&data[..], b"-TEST\r\n");
+    }
+
+    #[test]
+    fn codec_can_decode_errors() {
+        let mut data = BytesMut::from("-TEST\r\n");
+        let decoded = Value::read_from(&mut data).expect("Failed to decode error");
+        assert_eq!(decoded, Some(Value::Error(Bytes::from("TEST"))));
+    }
+
+    #[test]
+    fn codec_can_encode_bulk_strings() {
+        let mut data = BytesMut::new();
+        Value::BulkString(Bytes::from("TEST\r\n"))
+            .write_to(&mut data)
+            .unwrap();
+
+        assert_eq!(&data[..], b"$6\r\nTEST\r\n\r\n");
+    }
+
+    #[test]
+    fn codec_can_decode_bulk_strings() {
+        let mut data = BytesMut::from("$6\r\nTEST\r\n\r\n");
+        let decoded = Value::read_from(&mut data).expect("Failed to decode bulk string");
+        assert_eq!(decoded, Some(Value::BulkString(Bytes::from("TEST\r\n"))));
+    }
+
+    #[test]
+    fn codec_can_encode_nil() {
+        let mut data = BytesMut::new();
+        Value::Nil.write_to(&mut data).unwrap();
+
+        assert_eq!(&data[..], b"$-1\r\n");
+    }
+
+    #[test]
+    fn codec_can_decode_nil_bulk_strings() {
+        let mut data = BytesMut::from("$-1\r\n");
+        let decoded = Value::read_from(&mut data).expect("Failed to decode nil bulk string");
+        assert_eq!(decoded, Some(Value::Nil));
+    }
+
+    #[test]
+    fn codec_can_encode_integers() {
+        let mut data = BytesMut::new();
+        Value::Integer(600).write_to(&mut data).unwrap();
+
+        assert_eq!(&data[..], b":600\r\n");
+    }
+
+    #[test]
+    fn codec_can_decode_integers() {
+        let mut data = BytesMut::from(":600\r\n");
+        let decoded = Value::read_from(&mut data).expect("Failed to decode integer");
+        assert_eq!(decoded, Some(Value::Integer(600)));
+    }
+
+    #[test]
+    fn codec_can_encode_arrays() {
+        let mut data = BytesMut::new();
+        Value::Array(vec![
+            Value::SimpleString(Bytes::from("HELLO")),
+            Value::Error(Bytes::from("ERR")),
+            Value::Integer(34),
+        ])
+        .write_to(&mut data)
+        .unwrap();
+
+        assert_eq!(&data[..], b"*3\r\n+HELLO\r\n-ERR\r\n:34\r\n");
+    }
+
+    #[test]
+    fn codec_can_decode_arrays() {
+        let mut data = BytesMut::from("*3\r\n+HELLO\r\n-ERR\r\n:34\r\n");
+        let decoded = Value::read_from(&mut data).expect("Failed to decode array");
+        assert_eq!(
+            decoded,
+            Some(Value::Array(vec![
+                Value::SimpleString(Bytes::from("HELLO")),
+                Value::Error(Bytes::from("ERR")),
+                Value::Integer(34),
+            ]))
+        );
+    }
+
+    #[test]
+    fn codec_ignores_values_outside_array() {
+        let mut data = BytesMut::from("*3\r\n+HELLO\r\n-ERR\r\n:34\r\n+EXTRA\r\n");
+        let decoded = Value::read_from(&mut data).expect("Failed to decode array");
+        assert_eq!(
+            decoded,
+            Some(Value::Array(vec![
+                Value::SimpleString(Bytes::from("HELLO")),
+                Value::Error(Bytes::from("ERR")),
+                Value::Integer(34),
+            ]))
+        );
+        assert_eq!(&data[..], b"+EXTRA\r\n");
+    }
+
+    #[test]
+    fn codec_ignores_bytes_outside_simple_string() {
+        let mut data = BytesMut::from("+TEST\r\n+TEST2\r\n");
+        let _ = Value::read_from(&mut data).expect("Failed to decode simple string");
+        assert_eq!(&data[..], b"+TEST2\r\n");
+    }
+
+}
