@@ -6,3 +6,4 @@ pub mod utils {
 pub mod codecs;
 pub mod protocol;
 pub mod server;
+pub mod storage;

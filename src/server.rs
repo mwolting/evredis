@@ -6,12 +6,14 @@ use slog_scope::{error, info};
 
 use serde_derive::Deserialize;
 
-use actix::Addr;
+use actix::prelude::*;
 use actix_net::server::Server;
 use actix_net::service::IntoNewService;
 use futures::{Future, IntoFuture};
 
 use crate::codecs::resp2;
+use crate::storage::reader::Reader;
+use crate::storage::writer::Writer;
 
 pub mod connection;
 
@@ -38,13 +40,17 @@ impl ServerConfiguration {
 pub fn start(addr: impl ToSocketAddrs) -> io::Result<Addr<Server>> {
     Ok(Server::default()
         .bind("evredis", addr, move || {
+            info!("Spawning new worker");
             let codec = resp2::StreamCodec::default();
 
-            info!("Spawning new worker");
             (move |stream: tokio_tcp::TcpStream| {
                 info!("Accepting new connection");
                 stream.set_nodelay(true).unwrap();
-                connection::accept(stream, codec.clone())
+
+                let reader = Reader::from_registry();
+                let writer = Writer::from_registry();
+
+                connection::accept(stream, codec.clone(), reader, writer)
                     .into_future()
                     .map_err(|err| error!("Connection error: {}", err))
             })
