@@ -1,5 +1,4 @@
 [logging]
 format = "compact"
-level = "trace"
-filter = "evredis"
-debug_info = true
+level = "info"
+stdlog_level = "info"

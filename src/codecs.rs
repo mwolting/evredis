@@ -28,7 +28,10 @@ quick_error! {
         UnexpectedByte(byte: u8) {
             display("Unexpected byte: {}", byte)
         }
+        UnrecognizedCommand {}
+        UnexpectedNumberOfArguments {}
         InvalidLength {}
+        InvalidDataType {}
         InvalidString(err: Utf8Error) {
             display("Invalid string: {}", err)
             from()
@@ -64,7 +67,10 @@ where
     E: From<io::Error>,
 {
     fn clone(&self) -> Self {
-        StreamCodec { __protocol: self.__protocol, __err: self.__err }
+        StreamCodec {
+            __protocol: self.__protocol,
+            __err: self.__err,
+        }
     }
 }
 impl<P, E> Default for StreamCodec<P, E>
@@ -75,7 +81,10 @@ where
     E: From<io::Error>,
 {
     fn default() -> Self {
-        StreamCodec { __protocol: PhantomData, __err: PhantomData }
+        StreamCodec {
+            __protocol: PhantomData,
+            __err: PhantomData,
+        }
     }
 }
 
@@ -90,6 +99,7 @@ where
     type Error = E;
 
     fn encode(&mut self, response: Response, buffer: &mut BytesMut) -> Result<(), E> {
+        P::encode_to(response, buffer)?;
         Ok(())
     }
 }

@@ -16,7 +16,8 @@ pub struct LoggingConfiguration {
     filter: Option<String>,
     forward_stdlog: bool,
     stdlog_level: Option<String>,
-    debug_info: bool,
+    with_module: bool,
+    with_filename: bool,
 }
 
 impl Default for LoggingConfiguration {
@@ -27,7 +28,8 @@ impl Default for LoggingConfiguration {
             filter: None,
             forward_stdlog: true,
             stdlog_level: Some("info".into()),
-            debug_info: false,
+            with_module: true,
+            with_filename: false,
         }
     }
 }
@@ -57,7 +59,9 @@ impl LoggingConfiguration {
         if let Some(ref level) = self.level {
             filter = filter.filter(
                 None,
-                level.parse::<slog::FilterLevel>().unwrap_or(slog::FilterLevel::Warning),
+                level
+                    .parse::<slog::FilterLevel>()
+                    .unwrap_or(slog::FilterLevel::Warning),
             );
         };
         if let Some(ref filter_expr) = self.filter {
@@ -68,24 +72,21 @@ impl LoggingConfiguration {
     }
 
     pub fn create_logger(&self) -> slog::Logger {
-        if self.debug_info {
-            slog::Logger::root(
-                self.build_format(),
-                o!(
-                 "module" => slog::FnValue(move |info| {
+        let module = slog::FnValue(move |info| {
                      info.module()
-                 }),
-                "file" =>
-                 slog::FnValue(move |info| {
-                     format!("{}:{}",
-                             info.file(),
-                             info.line()
-                             )
-                 }),
-                ),
-            )
-        } else {
-            slog::Logger::root(self.build_format(), o!())
+                 });
+            let filename = slog::FnValue(move |info| {
+                format!("{}:{}",
+                        info.file(),
+                        info.line()
+                        )
+            });
+
+        match (self.with_filename, self.with_module) {
+            (false, false) => slog::Logger::root(self.build_format(),o!()),
+            (false, true) => slog::Logger::root(self.build_format(),o!("module" => module)),
+            (true, false) => slog::Logger::root(self.build_format(),o!("file" => filename)),
+            (true, true) => slog::Logger::root(self.build_format(),o!("module" => module, "file" => filename)),
         }
     }
 
@@ -96,7 +97,11 @@ impl LoggingConfiguration {
         let guard = slog_scope::set_global_logger(logger);
         if self.forward_stdlog {
             if let Some(ref level) = self.stdlog_level {
-                slog_stdlog::init_with_level(level.parse::<log::LogLevel>().unwrap_or(log::LogLevel::Info))?;
+                slog_stdlog::init_with_level(
+                    level
+                        .parse::<log::LogLevel>()
+                        .unwrap_or(log::LogLevel::Info),
+                )?;
             } else {
                 slog_stdlog::init()?;
             }

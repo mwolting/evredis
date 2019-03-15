@@ -41,8 +41,9 @@ pub fn start(addr: impl ToSocketAddrs) -> io::Result<Addr<Server>> {
             let codec = resp2::StreamCodec::default();
 
             info!("Spawning new worker");
-            (move |stream| {
+            (move |stream: tokio_tcp::TcpStream| {
                 info!("Accepting new connection");
+                stream.set_nodelay(true).unwrap();
                 connection::accept(stream, codec.clone())
                     .into_future()
                     .map_err(|err| error!("Connection error: {}", err))

@@ -32,6 +32,7 @@ smallvec = "0.6"
 
 clap = "2.32"
 structopt = "0.2"
+ctrlc = "3.1"
 
 actix = "0.7"
 actix-net = "0.2"
@@ -39,8 +40,9 @@ bytes = "0.4"
 futures = "0.1"
 tokio-codec = "0.1"
 tokio-io = "0.1"
+tokio-tcp = "0.1"
 
-nom = "0.4"
+uuid = "0.7"
 
 semver = { version = "0.9", features = ["serde"] }
 

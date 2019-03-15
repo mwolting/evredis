@@ -1,9 +1,17 @@
+use bytes::BytesMut;
+
 #[derive(Debug)]
 pub enum Command {
-    Get(String),
+    Ping(Option<BytesMut>),
 }
 
 #[derive(Debug)]
+pub enum Error {}
+
+#[derive(Debug)]
 pub enum Response {
-    String(String),
+    Error(Error),
+    Nil,
+    Pong,
+    Bulk(BytesMut),
 }

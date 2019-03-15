@@ -27,6 +27,11 @@ fn main() -> Result<(), Box<std::error::Error>> {
 
     let system = System::new("evredis");
 
+    ctrlc::set_handler(|| {
+        System::current().stop();
+    })
+    .expect("Failed to set ctrl+c handler");
+
     info!("evredis v{}", VERSION);
 
     config.server.start_server()?;

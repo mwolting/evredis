@@ -3,7 +3,7 @@ use std::mem;
 use slog::{slog_debug, slog_trace};
 use slog_scope::{debug, trace};
 
-use bytes::BytesMut;
+use bytes::{BufMut, BytesMut};
 
 use crate::protocol::{Command, Response};
 
@@ -16,10 +16,14 @@ pub enum Value {
     Integer(i64),
     BulkString(BytesMut),
     Array(Vec<Value>),
-    Null,
+    Nil,
 }
 impl<'a> Value {
     fn read_from(buffer: &mut BytesMut) -> Result<Option<Self>, DecodeError> {
+        if buffer.len() == 0 {
+            return Ok(None);
+        }
+
         fn read_simple(buffer: &mut BytesMut) -> Result<Option<BytesMut>, DecodeError> {
             let pos = match buffer.iter().position(|&x| x == b'\r' || x == b'\n') {
                 Some(pos) => pos,
@@ -72,7 +76,7 @@ impl<'a> Value {
                     })?
                 {
                     if len == -1 {
-                        return Ok(Some(Value::Null));
+                        return Ok(Some(Value::Nil));
                     }
 
                     let mut values: Vec<Value> = Vec::with_capacity(len as usize);
@@ -107,7 +111,7 @@ impl<'a> Value {
                     })?
                 {
                     if len == -1 {
-                        Ok(Some(Value::Null))
+                        Ok(Some(Value::Nil))
                     } else if len < 0 {
                         mem::swap(&mut original, buffer);
                         Err(DecodeError::InvalidLength)
@@ -129,18 +133,91 @@ impl<'a> Value {
             b => Err(DecodeError::UnexpectedByte(b)),
         }
     }
+
+    fn write_to(self, buffer: &mut BytesMut) -> Result<(), EncodeError> {
+        match self {
+            Value::Nil => {
+                buffer.reserve(5);
+                buffer.put("$-1\r\n");
+            }
+            Value::SimpleString(data) => {
+                buffer.reserve(3 + data.len());
+                buffer.put("+");
+                buffer.put(data);
+                buffer.put("\r\n");
+            }
+            Value::Error(data) => {
+                buffer.reserve(3 + data.len());
+                buffer.put("-");
+                buffer.put(data);
+                buffer.put("\r\n");
+            }
+            Value::Integer(value) => {
+                let data = value.to_string();
+                buffer.reserve(3 + data.len());
+                buffer.put(":");
+                buffer.put(data);
+                buffer.put("\r\n");
+            }
+            Value::BulkString(data) => {
+                let data_len = data.len().to_string();
+                buffer.reserve(5 + data.len() + data_len.len());
+
+                buffer.put("$");
+                buffer.put(data_len);
+                buffer.put("\r\n");
+                buffer.put(data);
+                buffer.put("\r\n");
+            }
+            Value::Array(elements) => {
+                let elements_len = elements.len().to_string();
+                buffer.reserve(3 + elements.len() + elements_len.len());
+                buffer.put("*");
+                buffer.put(elements_len);
+                buffer.put("\r\n");
+                for element in elements.into_iter() {
+                    element.write_to(buffer)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 impl ProtocolCodec for Value {
     fn decode_from(buffer: &mut BytesMut) -> Result<Option<Command>, DecodeError> {
         if let Some(value) = Self::read_from(buffer)? {
             debug!("Parsed raw value {:?}", value);
-            Ok(None)
+
+            if let Value::Array(elems) = value {
+                match elems[0] {
+                    Value::SimpleString(ref command) | Value::BulkString(ref command) => {
+                        match command.as_ref() {
+                            b"PING" => Ok(Some(Command::Ping(None))),
+                            _ => Err(DecodeError::UnrecognizedCommand),
+                        }
+                    }
+                    _ => Err(DecodeError::InvalidDataType),
+                }
+            } else {
+                Err(DecodeError::InvalidDataType)
+            }
         } else {
             Ok(None)
         }
     }
     fn encode_to(response: Response, buffer: &mut BytesMut) -> Result<(), EncodeError> {
-        unimplemented!()
+        let value = match response {
+            Response::Nil => Value::Nil,
+            Response::Pong => Value::SimpleString(BytesMut::from(&b"PONG"[..])),
+            Response::Bulk(data) => Value::BulkString(data),
+            _ => unimplemented!(),
+        };
+        debug!("Encoded raw value {:?}", value);
+
+        value.write_to(buffer)?;
+
+        Ok(())
     }
 }
 

@@ -4,9 +4,10 @@ version = "0.1.0"
 [logging]
 format = "full"
 level = "warn"
-debug_info = false
+with_module = true
+with_filename = false
 
 [server]
 listen_on = [
-    "127.0.0.1:6379"
+    "0.0.0.0:6379"
 ]
