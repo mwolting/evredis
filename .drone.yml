@@ -1,0 +1,13 @@
+kind: pipeline
+name: default
+
+steps:
+  - name: check
+    image: liuchong/docker-rustup:stable
+    commands:
+      - export PATH="$PATH:$CARGO_HOME/bin"
+      - rustup component add clippy rustfmt
+      - cargo install cargo-update cargo-make || true
+      - cargo install-update -a
+      - cargo make check-release-flow
+      - cp -r target/package/release evredis
