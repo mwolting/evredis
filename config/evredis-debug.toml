@@ -1,4 +1,4 @@
 [logging]
 format = "compact"
-level = "info"
+level = "warn"
 stdlog_level = "info"

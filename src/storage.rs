@@ -18,6 +18,9 @@ quick_error! {
         NoWriteAccess {
             display("No write access")
         }
+        NoReadAccess {
+            display("No read access")
+        }
     }
 }
 

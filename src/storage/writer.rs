@@ -9,7 +9,7 @@ use actix_derive::{Message, MessageResponse};
 
 use actix::prelude::*;
 
-use crate::protocol::{self, Command, Response};
+use crate::protocol::{Command, Response};
 
 pub struct Writer {
     reader: ReadHandle<Key, Value>,
@@ -42,17 +42,24 @@ impl SystemService for Writer {}
 impl Handler<Subscribe> for Writer {
     type Result = Subscription;
 
-    fn handle(&mut self, _: Subscribe, ctx: &mut Context<Self>) -> Self::Result {
+    fn handle(&mut self, _: Subscribe, _ctx: &mut Context<Self>) -> Self::Result {
         Subscription(self.reader.clone())
     }
 }
 impl Handler<Operation> for Writer {
     type Result = Result<Response, StorageError>;
 
-    fn handle(&mut self, operation: Operation, ctx: &mut Context<Self>) -> Self::Result {
+    fn handle(&mut self, operation: Operation, _ctx: &mut Context<Self>) -> Self::Result {
+        debug_assert!(operation.command.writes());
+
         Ok(match operation.command {
-            Command::Ping(None) => Response::Pong,
-            Command::Ping(Some(msg)) => Response::Bulk(msg),
+            Command::Set(key, value) => {
+                self.writer.update(key, Value::String(value));
+                self.writer.refresh();
+                Response::Ok
+            }
+            ref other if other.reads() => return Err(StorageError::NoReadAccess),
+            _ => unreachable!(),
         })
     }
 }

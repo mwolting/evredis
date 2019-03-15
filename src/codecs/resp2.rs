@@ -3,18 +3,18 @@ use std::mem;
 use slog::{slog_debug, slog_trace};
 use slog_scope::{debug, trace};
 
-use bytes::{BufMut, BytesMut};
+use bytes::{BufMut, Bytes, BytesMut};
 
-use crate::protocol::{Command, Response};
+use crate::protocol::{Command, Error, Response};
 
 use super::{DecodeError, EncodeError, ProtocolCodec};
 
 #[derive(Debug, Clone)]
 pub enum Value {
-    SimpleString(BytesMut),
-    Error(BytesMut),
+    SimpleString(Bytes),
+    Error(Bytes),
     Integer(i64),
-    BulkString(BytesMut),
+    BulkString(Bytes),
     Array(Vec<Value>),
     Nil,
 }
@@ -49,11 +49,11 @@ impl<'a> Value {
         match buffer[0] {
             b'+' => Ok(read_simple(buffer)?.map(|mut command| {
                 command.advance(1);
-                Value::SimpleString(command.split_to(command.len() - 2))
+                Value::SimpleString(command.split_to(command.len() - 2).freeze())
             })),
             b'-' => Ok(read_simple(buffer)?.map(|mut command| {
                 command.advance(1);
-                Value::Error(command.split_to(command.len() - 2))
+                Value::Error(command.split_to(command.len() - 2).freeze())
             })),
             b':' => read_simple(buffer)?
                 .map(|command| -> Result<Value, DecodeError> {
@@ -123,7 +123,10 @@ impl<'a> Value {
                         Err(DecodeError::UnexpectedByte(buffer[(len as usize) + 1]))
                     } else {
                         Ok(Some(Value::BulkString(
-                            buffer.split_to(len as usize + 2).split_to(len as usize),
+                            buffer
+                                .split_to(len as usize + 2)
+                                .split_to(len as usize)
+                                .freeze(),
                         )))
                     }
                 } else {
@@ -190,15 +193,29 @@ impl ProtocolCodec for Value {
             debug!("Parsed raw value {:?}", value);
 
             if let Value::Array(elems) = value {
-                match elems[0] {
+                Ok(Some(match elems[0] {
                     Value::SimpleString(ref command) | Value::BulkString(ref command) => {
                         match command.as_ref() {
-                            b"PING" => Ok(Some(Command::Ping(None))),
-                            _ => Err(DecodeError::UnrecognizedCommand),
+                            b"PING" => match &elems[1..] {
+                                &[] => Command::Ping(None),
+                                &[Value::BulkString(ref msg)] => Command::Ping(Some(msg.clone())),
+                                _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
+                            },
+                            b"GET" => match &elems[1..] {
+                                &[Value::BulkString(ref key)] => Command::Get(key.clone()),
+                                _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
+                            },
+                            b"SET" => match &elems[1..] {
+                                &[Value::BulkString(ref key), Value::BulkString(ref value)] => {
+                                    Command::Set(key.clone(), value.clone())
+                                }
+                                _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
+                            },
+                            _ => Err(DecodeError::UnrecognizedCommand)?,
                         }
                     }
-                    _ => Err(DecodeError::InvalidDataType),
-                }
+                    _ => Err(DecodeError::InvalidDataType)?,
+                }))
             } else {
                 Err(DecodeError::InvalidDataType)
             }
@@ -209,9 +226,12 @@ impl ProtocolCodec for Value {
     fn encode_to(response: Response, buffer: &mut BytesMut) -> Result<(), EncodeError> {
         let value = match response {
             Response::Nil => Value::Nil,
-            Response::Pong => Value::SimpleString(BytesMut::from(&b"PONG"[..])),
+            Response::Pong => Value::SimpleString(Bytes::from(&b"PONG"[..])),
+            Response::Ok => Value::SimpleString(Bytes::from(&b"OK"[..])),
             Response::Bulk(data) => Value::BulkString(data),
-            _ => unimplemented!(),
+            Response::Error(Error::WrongType) => Value::Error(Bytes::from(
+                &b"WRONGTYPE Operation against a key holding the wrong kind of value"[..],
+            )),
         };
         debug!("Encoded raw value {:?}", value);
 

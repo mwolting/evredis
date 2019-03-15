@@ -1,6 +1,6 @@
 use std::io;
 
-use slog::{slog_info, slog_o, Logger};
+use slog::{slog_debug, slog_info, slog_o, Logger};
 use slog_scope::info;
 
 use quick_error::quick_error;
@@ -13,9 +13,9 @@ use tokio_io::{AsyncRead, AsyncWrite};
 
 use crate::codecs::{DecodeError, EncodeError};
 use crate::protocol::{Command, Response};
-use crate::storage::{Operation, StorageError};
 use crate::storage::reader::Reader;
 use crate::storage::writer::Writer;
+use crate::storage::{Operation, StorageError};
 
 quick_error! {
     #[derive(Debug)]
@@ -52,7 +52,7 @@ where
     stream: T,
     logger: Logger,
     reader: Addr<Reader>,
-    writer: Addr<Writer>
+    writer: Addr<Writer>,
 }
 
 impl<T> Connection<T>
@@ -64,22 +64,35 @@ where
         let id = Uuid::new_v4();
         let logger = slog_scope::logger().new(slog_o!("connection" => format!("{}", id)));
         slog_info!(logger, "Opening connection");
-        Connection { id, stream, logger, reader, writer }
+        Connection {
+            id,
+            stream,
+            logger,
+            reader,
+            writer,
+        }
     }
 
     pub fn run(self) -> impl Future<Item = (), Error = ConnectionError> {
-        let Connection { stream, logger, id, reader, writer } = self;
+        let Connection {
+            stream,
+            logger,
+            id,
+            reader,
+            writer,
+        } = self;
         let (tx, rx) = stream.split();
 
         rx.and_then(move |cmd| {
-            slog_info!(logger, "Processing command {:?}", cmd);
+            slog_debug!(logger, "Processing command {:?}", cmd);
 
-            let response: Box<Future<Item = Result<Response, StorageError>, Error = _>> = if cmd.writes() {
-                Box::new(writer.send(Operation::from(cmd)))
-            } else {
-                Box::new(reader.send(Operation::from(cmd)))
-            };
-            
+            let response: Box<Future<Item = Result<Response, StorageError>, Error = _>> =
+                if cmd.writes() {
+                    Box::new(writer.send(Operation::from(cmd)))
+                } else {
+                    Box::new(reader.send(Operation::from(cmd)))
+                };
+
             response.map_err(ConnectionError::from).and_then(|x| Ok(x?))
         })
         .forward(tx)
@@ -87,7 +100,12 @@ where
     }
 }
 
-pub fn accept<S, D>(stream: S, codec: D, reader: Addr<Reader>, writer: Addr<Writer>) -> impl IntoFuture<Item = (), Error = ConnectionError>
+pub fn accept<S, D>(
+    stream: S,
+    codec: D,
+    reader: Addr<Reader>,
+    writer: Addr<Writer>,
+) -> impl IntoFuture<Item = (), Error = ConnectionError>
 where
     S: AsyncRead + AsyncWrite,
     D: Decoder<Item = Command, Error = ConnectionError>,

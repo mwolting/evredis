@@ -72,21 +72,17 @@ impl LoggingConfiguration {
     }
 
     pub fn create_logger(&self) -> slog::Logger {
-        let module = slog::FnValue(move |info| {
-                     info.module()
-                 });
-            let filename = slog::FnValue(move |info| {
-                format!("{}:{}",
-                        info.file(),
-                        info.line()
-                        )
-            });
+        let module = slog::FnValue(move |info| info.module());
+        let filename = slog::FnValue(move |info| format!("{}:{}", info.file(), info.line()));
 
         match (self.with_filename, self.with_module) {
-            (false, false) => slog::Logger::root(self.build_format(),o!()),
-            (false, true) => slog::Logger::root(self.build_format(),o!("module" => module)),
-            (true, false) => slog::Logger::root(self.build_format(),o!("file" => filename)),
-            (true, true) => slog::Logger::root(self.build_format(),o!("module" => module, "file" => filename)),
+            (false, false) => slog::Logger::root(self.build_format(), o!()),
+            (false, true) => slog::Logger::root(self.build_format(), o!("module" => module)),
+            (true, false) => slog::Logger::root(self.build_format(), o!("file" => filename)),
+            (true, true) => slog::Logger::root(
+                self.build_format(),
+                o!("module" => module, "file" => filename),
+            ),
         }
     }
 

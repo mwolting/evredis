@@ -1,16 +1,19 @@
-use bytes::BytesMut;
+use bytes::Bytes;
 
 use actix_derive::Message;
 
 #[derive(Debug, Message)]
 pub enum Command {
-    Ping(Option<BytesMut>),
+    Ping(Option<Bytes>),
+    Get(Bytes),
+    Set(Bytes, Bytes),
 }
 impl Command {
     pub fn writes(&self) -> bool {
         use Command::*;
         match self {
-            Ping(_) => true,
+            Ping(_) | Get(_) => false,
+            _ => true,
         }
     }
 
@@ -20,12 +23,15 @@ impl Command {
 }
 
 #[derive(Debug)]
-pub enum Error {}
+pub enum Error {
+    WrongType,
+}
 
 #[derive(Debug)]
 pub enum Response {
+    Ok,
     Error(Error),
     Nil,
     Pong,
-    Bulk(BytesMut),
+    Bulk(Bytes),
 }

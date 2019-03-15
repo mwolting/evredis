@@ -7,7 +7,7 @@ use evmap::ReadHandle;
 
 use actix::prelude::*;
 
-use crate::protocol::{self, Command, Response};
+use crate::protocol::{Command, Error, Response};
 
 pub struct Reader {
     store: Option<ReadHandle<Key, Value>>,
@@ -44,13 +44,24 @@ impl Actor for Reader {
 impl Handler<Operation> for Reader {
     type Result = Result<Response, StorageError>;
 
-    fn handle(&mut self, operation: Operation, ctx: &mut Context<Self>) -> Self::Result {
+    fn handle(&mut self, operation: Operation, _ctx: &mut Context<Self>) -> Self::Result {
         debug_assert!(operation.command.reads());
+        let reader = self
+            .store
+            .as_ref()
+            .expect("Reader not yet ready to respond");
 
         Ok(match operation.command {
             Command::Ping(None) => Response::Pong,
             Command::Ping(Some(msg)) => Response::Bulk(msg),
-            _ => return Err(StorageError::NoWriteAccess),
+            Command::Get(key) => reader
+                .get_and(&key, |v| match v[0] {
+                    Value::String(ref data) => Response::Bulk(data.clone()),
+                    _ => Response::Error(Error::WrongType),
+                })
+                .unwrap_or(Response::Nil),
+            ref other if other.writes() => return Err(StorageError::NoWriteAccess),
+            _ => unreachable!(),
         })
     }
 }
