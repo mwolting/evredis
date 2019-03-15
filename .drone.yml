@@ -3,7 +3,7 @@ name: default
 
 steps:
   - name: check
-    image: liuchong/docker-rustup:stable
+    image: liuchong/rustup:stable
     commands:
       - export PATH="$PATH:$CARGO_HOME/bin"
       - rustup component add clippy rustfmt
