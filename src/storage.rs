@@ -96,9 +96,15 @@ trait OperationProcessor {
                     writer.update(key, Value::String(value));
                     Response::Ok
                 }
-                Command::Del(key) => {
-                    writer.empty(key);
-                    Response::Ok
+                Command::Del(keys) => {
+                    let mut updated = 0;
+                    for key in keys {
+                        if writer.contains_key(&key) {
+                            updated += 1;
+                            writer.empty(key);
+                        }
+                    }
+                    Response::Integer(updated)
                 }
                 _ => unreachable!(),
             });
@@ -114,6 +120,9 @@ trait OperationProcessor {
                 Command::Get(key) => reader
                     .get_and(&key, get_string_as_bulk)
                     .unwrap_or(Response::Nil),
+                Command::Exists(keys) => Response::Integer(
+                    keys.into_iter().filter(|k| reader.contains_key(k)).count() as i64,
+                ),
                 _ => unreachable!(),
             })
         }

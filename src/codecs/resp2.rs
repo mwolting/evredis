@@ -199,30 +199,43 @@ impl ProtocolCodec for Value {
             debug!("Parsed raw value {:?}", value);
 
             if let Value::Array(elems) = value {
-                Ok(Some(match elems[0] {
-                    Value::BulkString(ref command) => match command.as_ref() {
-                        b"ping" | b"PING" => match &elems[1..] {
-                            [] => Command::Ping(None),
-                            [Value::BulkString(ref msg)] => Command::Ping(Some(msg.clone())),
-                            _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
-                        },
-                        b"get" | b"GET" => match &elems[1..] {
-                            [Value::BulkString(ref key)] => Command::Get(key.clone()),
-                            _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
-                        },
-                        b"set" | b"SET" => match &elems[1..] {
-                            [Value::BulkString(ref key), Value::BulkString(ref value)] => {
-                                Command::Set(key.clone(), value.clone())
-                            }
-                            _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
-                        },
-                        b"del" | b"DEL" => match &elems[1..] {
-                            [Value::BulkString(ref key)] => Command::Del(key.clone()),
-                            _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
-                        },
-                        _ => Err(DecodeError::UnrecognizedCommand)?,
+                let elems = elems
+                    .into_iter()
+                    .map(|x| match x {
+                        Value::BulkString(data) => Ok(data),
+                        _ => Err(DecodeError::InvalidDataType),
+                    })
+                    .collect::<Result<Vec<_>, DecodeError>>()?;
+
+                Ok(Some(match elems[0].as_ref() {
+                    b"ping" | b"PING" => match &elems[1..] {
+                        [] => Command::Ping(None),
+                        [ref msg] => Command::Ping(Some(msg.clone())),
+                        _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
                     },
-                    _ => Err(DecodeError::InvalidDataType)?,
+                    b"get" | b"GET" => match &elems[1..] {
+                        [ref key] => Command::Get(key.clone()),
+                        _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
+                    },
+                    b"set" | b"SET" => match &elems[1..] {
+                        [ref key, ref value] => Command::Set(key.clone(), value.clone()),
+                        _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
+                    },
+                    b"del" | b"DEL" => {
+                        if elems.len() > 1 {
+                            Command::Del((&elems[1..]).into())
+                        } else {
+                            Err(DecodeError::UnexpectedNumberOfArguments)?
+                        }
+                    }
+                    b"exists" | b"EXISTS" => {
+                        if elems.len() > 1 {
+                            Command::Exists((&elems[1..]).into())
+                        } else {
+                            Err(DecodeError::UnexpectedNumberOfArguments)?
+                        }
+                    }
+                    _ => Err(DecodeError::UnrecognizedCommand)?,
                 }))
             } else {
                 Err(DecodeError::InvalidDataType)
@@ -236,6 +249,7 @@ impl ProtocolCodec for Value {
             Response::Nil => Value::Nil,
             Response::Pong => Value::SimpleString(Bytes::from(&b"PONG"[..])),
             Response::Ok => Value::SimpleString(Bytes::from(&b"OK"[..])),
+            Response::Integer(value) => Value::Integer(value),
             Response::Bulk(data) => Value::BulkString(data),
             Response::Error(Error::WrongType) => Value::Error(Bytes::from(
                 &b"WRONGTYPE Operation against a key holding the wrong kind of value"[..],

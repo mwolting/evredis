@@ -11,6 +11,7 @@ Commands implemented:
 - GET
 - SET
 - DEL
+- EXISTS
 - PING
 
 ## License

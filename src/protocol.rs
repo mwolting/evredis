@@ -14,14 +14,16 @@ pub enum Command {
     /// Set a key's value
     Set(Bytes, Bytes),
     /// Delete a key
-    Del(Bytes),
+    Del(Vec<Bytes>),
+    /// Check if a key exists
+    Exists(Vec<Bytes>),
 }
 impl Command {
     /// Whether this command is a write operation
     pub fn writes(&self) -> bool {
         use Command::*;
         match self {
-            Ping(_) | Get(_) => false,
+            Ping(_) | Get(_) | Exists(_) => false,
             _ => true,
         }
     }
@@ -45,5 +47,6 @@ pub enum Response {
     Error(Error),
     Nil,
     Pong,
+    Integer(i64),
     Bulk(Bytes),
 }
