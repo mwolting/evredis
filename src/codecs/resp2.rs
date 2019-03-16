@@ -200,26 +200,28 @@ impl ProtocolCodec for Value {
 
             if let Value::Array(elems) = value {
                 Ok(Some(match elems[0] {
-                    Value::SimpleString(ref command) | Value::BulkString(ref command) => {
-                        match command.as_ref() {
-                            b"PING" => match &elems[1..] {
-                                [] => Command::Ping(None),
-                                [Value::BulkString(ref msg)] => Command::Ping(Some(msg.clone())),
-                                _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
-                            },
-                            b"GET" => match &elems[1..] {
-                                [Value::BulkString(ref key)] => Command::Get(key.clone()),
-                                _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
-                            },
-                            b"SET" => match &elems[1..] {
-                                [Value::BulkString(ref key), Value::BulkString(ref value)] => {
-                                    Command::Set(key.clone(), value.clone())
-                                }
-                                _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
-                            },
-                            _ => Err(DecodeError::UnrecognizedCommand)?,
-                        }
-                    }
+                    Value::BulkString(ref command) => match command.as_ref() {
+                        b"ping" | b"PING" => match &elems[1..] {
+                            [] => Command::Ping(None),
+                            [Value::BulkString(ref msg)] => Command::Ping(Some(msg.clone())),
+                            _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
+                        },
+                        b"get" | b"GET" => match &elems[1..] {
+                            [Value::BulkString(ref key)] => Command::Get(key.clone()),
+                            _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
+                        },
+                        b"set" | b"SET" => match &elems[1..] {
+                            [Value::BulkString(ref key), Value::BulkString(ref value)] => {
+                                Command::Set(key.clone(), value.clone())
+                            }
+                            _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
+                        },
+                        b"del" | b"DEL" => match &elems[1..] {
+                            [Value::BulkString(ref key)] => Command::Del(key.clone()),
+                            _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
+                        },
+                        _ => Err(DecodeError::UnrecognizedCommand)?,
+                    },
                     _ => Err(DecodeError::InvalidDataType)?,
                 }))
             } else {

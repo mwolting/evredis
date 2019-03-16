@@ -2,7 +2,8 @@
 
 use std::io;
 
-use slog::{slog_debug, slog_info, slog_o, Logger};
+use slog::{slog_debug, slog_error, slog_info, slog_o, Logger};
+use slog_scope::error;
 
 use quick_error::quick_error;
 use uuid::Uuid;
@@ -95,6 +96,12 @@ where
     R: Stream<Item = Command, Error = ConnectionError> + 'static,
     T: Sink<SinkItem = Response, SinkError = ConnectionError> + 'static,
 {
+    fn error(&mut self, err: ConnectionError, _ctx: &mut Self::Context) -> Running {
+        slog_error!(self.logger, "Connection error: {}", err);
+
+        Running::Stop
+    }
+
     fn handle(&mut self, operation: Operation, ctx: &mut Self::Context) {
         let cmd = operation.command;
         slog_debug!(self.logger, "Processing command {:?}", cmd);
@@ -112,7 +119,7 @@ where
                 .map(|sink, actor, _ctx| {
                     actor.tx = Some(sink);
                 })
-                .map_err(|_, _, _| ()),
+                .map_err(|err, _, _| error!("Error while executing command: {}", err)),
         );
     }
 }

@@ -1,18 +1,6 @@
 //! # evredis
 //!
 //! A Redis-compatible in-memory database, written in Rust and built on [actix](https://docs.rs/actix) and [evmap](https://docs.rs/evmap).
-//!
-//! ## Current state
-//!
-//! Commands implemented:
-//!
-//! - GET
-//! - SET
-//! - PING
-//!
-//! ## License
-//!
-//! evredis is available under the GNU Affero GPLv3 license.
 
 /// Various utilities
 pub mod utils {

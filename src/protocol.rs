@@ -9,10 +9,12 @@ use actix_derive::Message;
 pub enum Command {
     /// Ping the database
     Ping(Option<Bytes>),
-    /// Get a value
+    /// Get a key's value
     Get(Bytes),
-    /// Set a value
+    /// Set a key's value
     Set(Bytes, Bytes),
+    /// Delete a key
+    Del(Bytes),
 }
 impl Command {
     /// Whether this command is a write operation

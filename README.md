@@ -10,6 +10,7 @@ Commands implemented:
 
 - GET
 - SET
+- DEL
 - PING
 
 ## License

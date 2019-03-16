@@ -96,6 +96,10 @@ trait OperationProcessor {
                     writer.update(key, Value::String(value));
                     Response::Ok
                 }
+                Command::Del(key) => {
+                    writer.empty(key);
+                    Response::Ok
+                }
                 _ => unreachable!(),
             });
 
