@@ -6,10 +6,11 @@ use quick_error::quick_error;
 
 use bytes::Bytes;
 use evmap::shallow_copy::ShallowCopy;
+use evmap::{ReadHandle, WriteHandle};
 
 use actix_derive::Message;
 
-use crate::protocol::{Command, Response};
+use crate::protocol::{Command, Error, Response};
 
 pub mod reader;
 pub mod writer;
@@ -65,5 +66,52 @@ pub struct Operation {
 impl From<Command> for Operation {
     fn from(command: Command) -> Self {
         Operation { command }
+    }
+}
+
+mod ops {
+    use super::*;
+    pub fn get_string_as_bulk(values: &[Value]) -> Response {
+        match values[0] {
+            Value::String(ref data) => Response::Bulk(data.clone()),
+            _ => Response::Error(Error::WrongType),
+        }
+    }
+}
+
+trait OperationProcessor {
+    fn reader(&self) -> Option<&ReadHandle<Key, Value>>;
+    fn writer(&mut self) -> Option<&mut WriteHandle<Key, Value>>;
+
+    fn process_operation(&mut self, operation: Operation) -> Result<Response, StorageError> {
+        use self::ops::*;
+
+        let command = operation.command;
+
+        if command.writes() {
+            let writer = self.writer().ok_or(StorageError::NoWriteAccess)?;
+
+            let response = Ok(match command {
+                Command::Set(key, value) => {
+                    writer.update(key, Value::String(value));
+                    Response::Ok
+                }
+                _ => unreachable!(),
+            });
+
+            writer.refresh();
+            response
+        } else {
+            let reader = self.reader().ok_or(StorageError::NoReadAccess)?;
+
+            Ok(match command {
+                Command::Ping(None) => Response::Pong,
+                Command::Ping(Some(msg)) => Response::Bulk(msg),
+                Command::Get(key) => reader
+                    .get_and(&key, get_string_as_bulk)
+                    .unwrap_or(Response::Nil),
+                _ => unreachable!(),
+            })
+        }
     }
 }

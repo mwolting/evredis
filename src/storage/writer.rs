@@ -11,7 +11,7 @@ use actix_derive::{Message, MessageResponse};
 
 use actix::prelude::*;
 
-use crate::protocol::{Command, Response};
+use crate::protocol::Response;
 
 /// An actor that wraps a database reader handle
 pub struct Writer {
@@ -50,21 +50,21 @@ impl Handler<Subscribe> for Writer {
         Subscription(self.reader.clone())
     }
 }
+impl OperationProcessor for Writer {
+    fn reader(&self) -> Option<&ReadHandle<Key, Value>> {
+        Some(&self.reader)
+    }
+    fn writer(&mut self) -> Option<&mut WriteHandle<Key, Value>> {
+        Some(&mut self.writer)
+    }
+}
 impl Handler<Operation> for Writer {
     type Result = Result<Response, StorageError>;
 
     fn handle(&mut self, operation: Operation, _ctx: &mut Context<Self>) -> Self::Result {
         debug_assert!(operation.command.writes());
 
-        Ok(match operation.command {
-            Command::Set(key, value) => {
-                self.writer.update(key, Value::String(value));
-                self.writer.refresh();
-                Response::Ok
-            }
-            ref other if other.reads() => return Err(StorageError::NoReadAccess),
-            _ => unreachable!(),
-        })
+        self.process_operation(operation)
     }
 }
 

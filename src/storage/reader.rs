@@ -9,7 +9,7 @@ use evmap::ReadHandle;
 
 use actix::prelude::*;
 
-use crate::protocol::{Command, Error, Response};
+use crate::protocol::Response;
 
 /// An actor that wraps a database reader handle
 pub struct Reader {
@@ -45,27 +45,20 @@ impl Actor for Reader {
             .wait(ctx);
     }
 }
+impl OperationProcessor for Reader {
+    fn reader(&self) -> Option<&ReadHandle<Key, Value>> {
+        self.store.as_ref()
+    }
+    fn writer(&mut self) -> Option<&mut WriteHandle<Key, Value>> {
+        None
+    }
+}
 impl Handler<Operation> for Reader {
     type Result = Result<Response, StorageError>;
 
     fn handle(&mut self, operation: Operation, _ctx: &mut Context<Self>) -> Self::Result {
         debug_assert!(operation.command.reads());
-        let reader = self
-            .store
-            .as_ref()
-            .expect("Reader not yet ready to respond");
 
-        Ok(match operation.command {
-            Command::Ping(None) => Response::Pong,
-            Command::Ping(Some(msg)) => Response::Bulk(msg),
-            Command::Get(key) => reader
-                .get_and(&key, |v| match v[0] {
-                    Value::String(ref data) => Response::Bulk(data.clone()),
-                    _ => Response::Error(Error::WrongType),
-                })
-                .unwrap_or(Response::Nil),
-            ref other if other.writes() => return Err(StorageError::NoWriteAccess),
-            _ => unreachable!(),
-        })
+        self.process_operation(operation)
     }
 }
