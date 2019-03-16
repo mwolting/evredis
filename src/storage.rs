@@ -60,7 +60,7 @@ impl ShallowCopy for Value {
 #[derive(Debug, Message)]
 #[rtype(result = "Result<Response, StorageError>")]
 pub struct Operation {
-    command: Command,
+    pub command: Command,
 }
 impl From<Command> for Operation {
     fn from(command: Command) -> Self {

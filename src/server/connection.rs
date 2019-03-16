@@ -3,12 +3,11 @@
 use std::io;
 
 use slog::{slog_debug, slog_info, slog_o, Logger};
-use slog_scope::info;
 
 use quick_error::quick_error;
 use uuid::Uuid;
 
-use actix::Addr;
+use actix::prelude::*;
 use futures::{Future, IntoFuture, Sink, Stream};
 use tokio_codec::{Decoder, Encoder};
 use tokio_io::{AsyncRead, AsyncWrite};
@@ -58,11 +57,11 @@ where
     T: Sink<SinkItem = Response, SinkError = ConnectionError>,
 {
     /// The connection identifier (useful for log correlation)
-    id: Uuid,
+    _client_id: Uuid,
     /// The command stream to listen on
-    rx: R,
+    rx: Option<R>,
     /// The response sink to respond on
-    tx: T,
+    tx: Option<T>,
     /// A scoped logger
     logger: Logger,
     /// Address of the `Reader` actor to use
@@ -78,49 +77,67 @@ where
 {
     /// Create a new connection handler for the given input/output and reader/writer
     pub fn new(rx: R, tx: T, reader: Addr<Reader>, writer: Addr<Writer>) -> Self {
-        let id = Uuid::new_v4();
-        let logger = slog_scope::logger().new(slog_o!("connection" => format!("{}", id)));
-        slog_info!(logger, "Opening connection");
+        let client_id = Uuid::new_v4();
+        let logger = slog_scope::logger().new(slog_o!("client_id" => format!("{}", client_id)));
         Connection {
-            id,
-            rx,
-            tx,
+            _client_id: client_id,
+            rx: Some(rx),
+            tx: Some(tx),
             logger,
             reader,
             writer,
         }
     }
+}
 
-    /// Process the input stream's commands to completion
-    pub fn run(self) -> impl Future<Item = (), Error = ConnectionError> {
-        let Connection {
-            rx,
-            tx,
-            logger,
-            id,
-            reader,
-            writer,
-        } = self;
+impl<R, T> StreamHandler<Operation, ConnectionError> for Connection<R, T>
+where
+    R: Stream<Item = Command, Error = ConnectionError> + 'static,
+    T: Sink<SinkItem = Response, SinkError = ConnectionError> + 'static,
+{
+    fn handle(&mut self, operation: Operation, ctx: &mut Self::Context) {
+        let cmd = operation.command;
+        slog_debug!(self.logger, "Processing command {:?}", cmd);
 
-        rx.and_then(move |cmd| {
-            slog_debug!(logger, "Processing command {:?}", cmd);
+        let response: Box<Future<Item = Response, Error = ConnectionError>> = match cmd {
+            _ if cmd.writes() => Box::new(self.writer.send(Operation::from(cmd)).then(|x| Ok(x??))),
+            _ => Box::new(self.reader.send(Operation::from(cmd)).then(|x| Ok(x??))),
+        };
 
-            let response: Box<Future<Item = Result<Response, StorageError>, Error = _>> =
-                if cmd.writes() {
-                    Box::new(writer.send(Operation::from(cmd)))
-                } else {
-                    Box::new(reader.send(Operation::from(cmd)))
-                };
+        let tx = self.tx.take().expect("Sink not available");
+        ctx.wait(
+            response
+                .and_then(|msg| tx.send(msg))
+                .into_actor(self)
+                .map(|sink, actor, _ctx| {
+                    actor.tx = Some(sink);
+                })
+                .map_err(|_, _, _| ()),
+        );
+    }
+}
 
-            response.map_err(ConnectionError::from).and_then(|x| Ok(x?))
-        })
-        .forward(tx)
-        .map(move |_| info!("Closing connection"; "connection" => format_args!("{}", id)))
+impl<R, T> Actor for Connection<R, T>
+where
+    R: Stream<Item = Command, Error = ConnectionError> + 'static,
+    T: Sink<SinkItem = Response, SinkError = ConnectionError> + 'static,
+{
+    type Context = Context<Self>;
+
+    fn started(&mut self, ctx: &mut Context<Self>) {
+        slog_info!(self.logger, "Opening connection");
+        Self::add_stream(
+            self.rx
+                .take()
+                .expect("Stream already consumed")
+                .map(Operation::from),
+            ctx,
+        );
     }
 }
 
 /// Create and run a connection handler for the given bi-directional byte stream, codec, and reader/writer
-pub fn accept<S, D>(
+pub fn accept<S: 'static, D: 'static>(
     stream: S,
     codec: D,
     reader: Addr<Reader>,
@@ -134,5 +151,7 @@ where
     let (tx, rx) = codec.framed(stream).split();
     let conn = Connection::new(rx, tx, reader, writer);
 
-    conn.run()
+    conn.start();
+
+    Ok(())
 }
