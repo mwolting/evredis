@@ -48,6 +48,11 @@ quick_error! {
             display("Mailbox error: {}", err)
             from()
         }
+        /// An actor send error
+        Send(err: SendError<Operation>) {
+            display("Send error: {}", err)
+            from()
+        }
     }
 }
 
@@ -107,6 +112,8 @@ where
         slog_debug!(self.logger, "Processing command {:?}", cmd);
 
         let response: Box<Future<Item = Response, Error = ConnectionError>> = match cmd {
+            _ if cmd.is_async() && cmd.writes() => Box::new(self.writer.try_send(Operation::from(cmd)).map(|()| Response::Ok).map_err(ConnectionError::from).into_future()),
+            _ if cmd.is_async() => Box::new(self.reader.try_send(Operation::from(cmd)).map(|()| Response::Ok).map_err(ConnectionError::from).into_future()),
             _ if cmd.writes() => Box::new(self.writer.send(Operation::from(cmd)).then(|x| Ok(x??))),
             _ => Box::new(self.reader.send(Operation::from(cmd)).then(|x| Ok(x??))),
         };

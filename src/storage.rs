@@ -2,6 +2,9 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
+use slog::slog_info;
+use slog_scope::info;
+
 use quick_error::quick_error;
 
 use bytes::Bytes;
@@ -105,6 +108,11 @@ trait OperationProcessor {
                         }
                     }
                     Response::Integer(updated)
+                }
+                Command::FlushAll(_) | Command::FlushDB(_) => {
+                    info!("Flushing the database");
+                    writer.purge();
+                    Response::Ok
                 }
                 _ => unreachable!(),
             });

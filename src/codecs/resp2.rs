@@ -7,7 +7,7 @@ use slog_scope::{debug, trace};
 
 use bytes::{BufMut, Bytes, BytesMut};
 
-use crate::protocol::{Command, Error, Response};
+use crate::protocol::{Command, Error, Response, Synchronicity};
 
 use super::{DecodeError, EncodeError, ProtocolCodec};
 
@@ -221,20 +221,24 @@ impl ProtocolCodec for Value {
                         [ref key, ref value] => Command::Set(key.clone(), value.clone()),
                         _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
                     },
-                    b"del" | b"DEL" => {
-                        if elems.len() > 1 {
-                            Command::Del((&elems[1..]).into())
-                        } else {
-                            Err(DecodeError::UnexpectedNumberOfArguments)?
-                        }
-                    }
-                    b"exists" | b"EXISTS" => {
-                        if elems.len() > 1 {
-                            Command::Exists((&elems[1..]).into())
-                        } else {
-                            Err(DecodeError::UnexpectedNumberOfArguments)?
-                        }
-                    }
+                    b"del" | b"DEL" => match &elems[1..] {
+                        [] => Err(DecodeError::UnexpectedNumberOfArguments)?,
+                        keys => Command::Del(keys.into()),
+                    },
+                    b"exists" | b"EXISTS" => match &elems[1..] {
+                        [] => Err(DecodeError::UnexpectedNumberOfArguments)?,
+                        keys => Command::Exists(keys.into()),
+                    },
+                    b"flushdb" | b"FLUSHDB" => match &elems[1..] {
+                        [] => Command::FlushDB(Synchronicity::Sync),
+                        [ref opt] if opt.as_ref() == b"async" || opt.as_ref() == b"ASYNC" => Command::FlushDB(Synchronicity::Async),
+                        _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
+                    },
+                    b"flushall" | b"FLUSHALL" => match &elems[1..] {
+                        [] => Command::FlushAll(Synchronicity::Sync),
+                        [ref opt] if opt.as_ref() == b"async" || opt.as_ref() == b"ASYNC" => Command::FlushDB(Synchronicity::Async),
+                        _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
+                    },
                     _ => Err(DecodeError::UnrecognizedCommand)?,
                 }))
             } else {

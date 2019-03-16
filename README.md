@@ -13,6 +13,11 @@ Commands implemented:
 - DEL
 - EXISTS
 - PING
+- FLUSHDB
+- FLUSHALL
+
+Currently, evredis only supports a single database. Multi-database operations will therefore operate only on this one, and any database switching commands
+will fail.
 
 ## License
 

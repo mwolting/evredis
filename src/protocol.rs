@@ -4,6 +4,14 @@ use bytes::Bytes;
 
 use actix_derive::Message;
 
+
+#[derive(Debug)]
+pub enum Synchronicity {
+    Sync,
+    Async
+}
+
+
 /// A Redis command
 #[derive(Debug, Message)]
 pub enum Command {
@@ -17,8 +25,22 @@ pub enum Command {
     Del(Vec<Bytes>),
     /// Check if a key exists
     Exists(Vec<Bytes>),
+
+    /// Flush all databases
+    FlushAll(Synchronicity),
+    /// Flush current database
+    FlushDB(Synchronicity),
 }
 impl Command {
+    /// Whether this command should be executed asynchronously
+    pub fn is_async(&self) -> bool {
+        use Command::*;
+        match self {
+            FlushAll(Synchronicity::Async) | FlushDB(Synchronicity::Async) => true,
+            _ => false
+        }
+    }
+
     /// Whether this command is a write operation
     pub fn writes(&self) -> bool {
         use Command::*;
