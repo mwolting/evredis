@@ -2,6 +2,8 @@
 //!
 use super::*;
 
+use std::time::Duration;
+
 use slog::{slog_debug, slog_info};
 use slog_scope::{debug, info};
 
@@ -38,6 +40,25 @@ impl Default for Writer {
             writer,
             operation_id: 0,
         }
+    }
+}
+impl Writer {
+    fn expire(&self, ctx: &mut Context<Self>, key: Bytes, duration: Duration) {
+        use super::ops::*;
+
+        let operation_id = self.operation_id;
+        ctx.run_later(duration, move |act, _ctx| {
+            debug!("Expiring key {:?}", key);
+            if act
+                .writer
+                .get_and(&key, get_metadata)
+                .map(|meta| meta.operation_id == operation_id)
+                .unwrap_or(false)
+            {
+                act.writer.empty(key);
+                act.writer.refresh();
+            }
+        });
     }
 }
 impl Actor for Writer {
@@ -84,18 +105,7 @@ impl Handler<Operation> for Writer {
                     );
 
                     if let Some(t) = expiration {
-                        ctx.run_later(t, move |act, _ctx| {
-                            debug!("Expiring key {:?}", key);
-                            if act
-                                .writer
-                                .get_and(&key, get_metadata)
-                                .map(|meta| meta.operation_id == operation_id)
-                                .unwrap_or(false)
-                            {
-                                act.writer.empty(key);
-                                act.writer.refresh();
-                            }
-                        });
+                        self.expire(ctx, key, t);
                     }
 
                     Response::Ok
@@ -111,11 +121,50 @@ impl Handler<Operation> for Writer {
                 }
                 Response::Integer(updated)
             }
+            Command::Expire(key, expiration) => self
+                .reader
+                .get_and(&key, get_item)
+                .map(|Item { value, .. }| {
+                    let expires_at = clock::now() + expiration;
+                    self.writer.update(
+                        key.clone(),
+                        Item {
+                            value,
+                            meta: Metadata {
+                                expiration: Some(expires_at),
+                                operation_id,
+                            },
+                        },
+                    );
+
+                    self.expire(ctx, key, expiration);
+
+                    Response::Integer(1)
+                })
+                .unwrap_or(Response::Integer(0)),
+            Command::Persist(key) => self
+                .reader
+                .get_and(&key, get_item)
+                .map(|Item { value, .. }| {
+                    self.writer.update(
+                        key,
+                        Item {
+                            value,
+                            meta: Metadata {
+                                expiration: None,
+                                operation_id,
+                            },
+                        },
+                    );
+                    Response::Integer(1)
+                })
+                .unwrap_or(Response::Integer(0)),
             Command::FlushAll(_) | Command::FlushDB(_) => {
                 info!("Flushing the database");
                 self.writer.purge();
                 Response::Ok
             }
+            ref cmd if cmd.writes() => unimplemented!(),
             _ => Err(StorageError::NoReadAccess)?,
         });
 

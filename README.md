@@ -13,6 +13,8 @@ Commands implemented:
 - DEL
 - EXISTS
 - PING
+- (P)EXPIRE
+- PERSIST
 - FLUSHDB
 - FLUSHALL
 

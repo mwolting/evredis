@@ -195,15 +195,23 @@ impl<'a> Value {
     }
     fn parse_millis(data: &[u8]) -> Result<Duration, DecodeError> {
         let decoded = std::str::from_utf8(data)?;
-        let value: u64 = decoded.parse()?;
+        let value: i64 = decoded.parse()?;
 
-        Ok(Duration::from_millis(value))
+        Ok(Duration::from_millis(if value >= 0 {
+            value as u64
+        } else {
+            0
+        }))
     }
     fn parse_seconds(data: &[u8]) -> Result<Duration, DecodeError> {
         let decoded = std::str::from_utf8(data)?;
-        let value: u64 = decoded.parse()?;
+        let value: i64 = decoded.parse()?;
 
-        Ok(Duration::from_secs(value))
+        Ok(Duration::from_secs(if value >= 0 {
+            value as u64
+        } else {
+            0
+        }))
     }
 }
 impl ProtocolCodec for Value {
@@ -272,6 +280,22 @@ impl ProtocolCodec for Value {
                     b"exists" | b"EXISTS" => match &elems[1..] {
                         [] => Err(DecodeError::UnexpectedNumberOfArguments)?,
                         keys => Command::Exists(keys.into()),
+                    },
+                    b"expire" | b"EXPIRE" => match &elems[1..] {
+                        [ref key, ref seconds] => {
+                            Command::Expire(key.clone(), Self::parse_seconds(seconds)?)
+                        }
+                        _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
+                    },
+                    b"pexpire" | b"PEXPIRE" => match &elems[1..] {
+                        [ref key, ref seconds] => {
+                            Command::Expire(key.clone(), Self::parse_millis(seconds)?)
+                        }
+                        _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
+                    },
+                    b"persist" | b"PERSIST" => match &elems[1..] {
+                        [ref key] => Command::Persist(key.clone()),
+                        _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
                     },
                     b"flushdb" | b"FLUSHDB" => match &elems[1..] {
                         [] => Command::FlushDB(Synchronicity::Sync),

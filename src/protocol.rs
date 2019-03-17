@@ -43,6 +43,10 @@ pub enum Command {
     Del(Vec<Bytes>),
     /// Check if a key exists
     Exists(Vec<Bytes>),
+    /// Set an expiration for a key
+    Expire(Bytes, Duration),
+    /// Clear the expiration for a key
+    Persist(Bytes),
 
     /// Flush all databases
     FlushAll(Synchronicity),

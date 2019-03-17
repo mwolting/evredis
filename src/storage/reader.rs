@@ -65,6 +65,7 @@ impl Handler<Operation> for Reader {
             Command::Exists(keys) => {
                 Response::Integer(keys.into_iter().filter(|k| reader.contains_key(k)).count() as i64)
             }
+            ref cmd if cmd.reads() => unimplemented!(),
             _ => Err(StorageError::NoWriteAccess)?,
         })
     }

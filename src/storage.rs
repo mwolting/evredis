@@ -93,6 +93,10 @@ impl From<Command> for Operation {
 mod ops {
     use super::*;
 
+    pub fn get_item(values: &[Item]) -> Item {
+        values[0].clone()
+    }
+
     pub fn get_metadata(values: &[Item]) -> Metadata {
         match values[0] {
             Item { ref meta, .. } => meta.clone(),
