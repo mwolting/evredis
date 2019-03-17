@@ -13,12 +13,12 @@ use crate::protocol::Response;
 
 /// An actor that wraps a database reader handle
 pub struct Reader {
-    store: Option<ReadHandle<Key, Value>>,
+    store: Option<ReadHandle<Key, Item>>,
 }
 
 impl Reader {
     /// Construct a new reader for the given handle
-    pub fn new(store: ReadHandle<Key, Value>) -> Self {
+    pub fn new(store: ReadHandle<Key, Item>) -> Self {
         Reader { store: Some(store) }
     }
 }
@@ -45,20 +45,27 @@ impl Actor for Reader {
             .wait(ctx);
     }
 }
-impl OperationProcessor for Reader {
-    fn reader(&self) -> Option<&ReadHandle<Key, Value>> {
-        self.store.as_ref()
-    }
-    fn writer(&mut self) -> Option<&mut WriteHandle<Key, Value>> {
-        None
-    }
-}
+
 impl Handler<Operation> for Reader {
     type Result = Result<Response, StorageError>;
 
     fn handle(&mut self, operation: Operation, _ctx: &mut Context<Self>) -> Self::Result {
+        use super::ops::*;
+
         debug_assert!(operation.command.reads());
 
-        self.process_operation(operation)
+        let reader = self.store.as_ref().ok_or(StorageError::NoReadAccess)?;
+
+        Ok(match operation.command {
+            Command::Ping(None) => Response::Pong,
+            Command::Ping(Some(msg)) => Response::Bulk(msg),
+            Command::Get(key) => reader
+                .get_and(&key, get_string_as_bulk)
+                .unwrap_or(Response::Nil),
+            Command::Exists(keys) => {
+                Response::Integer(keys.into_iter().filter(|k| reader.contains_key(k)).count() as i64)
+            }
+            _ => Err(StorageError::NoWriteAccess)?,
+        })
     }
 }

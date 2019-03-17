@@ -1,13 +1,14 @@
 //! Command/response codec implementation for the [Redis Serialization Protocol v2 (RESP2)](https://redis.io/topics/protocol).
 
 use std::mem;
+use std::time::Duration;
 
 use slog::{slog_debug, slog_trace};
 use slog_scope::{debug, trace};
 
 use bytes::{BufMut, Bytes, BytesMut};
 
-use crate::protocol::{Command, Error, Response, Synchronicity};
+use crate::protocol::*;
 
 use super::{DecodeError, EncodeError, ProtocolCodec};
 
@@ -192,6 +193,18 @@ impl<'a> Value {
 
         Ok(())
     }
+    fn parse_millis(data: &[u8]) -> Result<Duration, DecodeError> {
+        let decoded = std::str::from_utf8(data)?;
+        let value: u64 = decoded.parse()?;
+
+        Ok(Duration::from_millis(value))
+    }
+    fn parse_seconds(data: &[u8]) -> Result<Duration, DecodeError> {
+        let decoded = std::str::from_utf8(data)?;
+        let value: u64 = decoded.parse()?;
+
+        Ok(Duration::from_secs(value))
+    }
 }
 impl ProtocolCodec for Value {
     fn decode_from(buffer: &mut BytesMut) -> Result<Option<Command>, DecodeError> {
@@ -218,7 +231,38 @@ impl ProtocolCodec for Value {
                         _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
                     },
                     b"set" | b"SET" => match &elems[1..] {
-                        [ref key, ref value] => Command::Set(key.clone(), value.clone()),
+                        [] | [_] => Err(DecodeError::UnexpectedNumberOfArguments)?,
+                        args if args.len() <= 5 => {
+                            let key = &args[0];
+                            let value = &args[1];
+
+                            let mut expiration: Option<Duration> = None;
+                            let mut conditional = Conditional::Always;
+
+                            let mut i = 2;
+                            while i < args.len() {
+                                match args[i].as_ref() {
+                                    b"XX" | b"xx" if conditional == Conditional::Always => {
+                                        conditional = Conditional::IfExists
+                                    }
+                                    b"NX" | b"nx" if conditional == Conditional::Always => {
+                                        conditional = Conditional::IfNotExists
+                                    }
+                                    b"PX" | b"px" if expiration.is_none() && i + 1 < args.len() => {
+                                        i += 1;
+                                        expiration = Some(Self::parse_millis(&args[i].as_ref())?);
+                                    }
+                                    b"EX" | b"ex" if expiration.is_none() && i + 1 < args.len() => {
+                                        i += 1;
+                                        expiration = Some(Self::parse_seconds(&args[i].as_ref())?);
+                                    }
+                                    _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
+                                }
+                                i += 1;
+                            }
+
+                            Command::Set(key.clone(), value.clone(), expiration, conditional)
+                        }
                         _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
                     },
                     b"del" | b"DEL" => match &elems[1..] {
@@ -231,12 +275,16 @@ impl ProtocolCodec for Value {
                     },
                     b"flushdb" | b"FLUSHDB" => match &elems[1..] {
                         [] => Command::FlushDB(Synchronicity::Sync),
-                        [ref opt] if opt.as_ref() == b"async" || opt.as_ref() == b"ASYNC" => Command::FlushDB(Synchronicity::Async),
+                        [ref opt] if opt.as_ref() == b"async" || opt.as_ref() == b"ASYNC" => {
+                            Command::FlushDB(Synchronicity::Async)
+                        }
                         _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
                     },
                     b"flushall" | b"FLUSHALL" => match &elems[1..] {
                         [] => Command::FlushAll(Synchronicity::Sync),
-                        [ref opt] if opt.as_ref() == b"async" || opt.as_ref() == b"ASYNC" => Command::FlushDB(Synchronicity::Async),
+                        [ref opt] if opt.as_ref() == b"async" || opt.as_ref() == b"ASYNC" => {
+                            Command::FlushDB(Synchronicity::Async)
+                        }
                         _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
                     },
                     _ => Err(DecodeError::UnrecognizedCommand)?,

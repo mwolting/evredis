@@ -1,16 +1,14 @@
 //! Underlying key/value storage
 
 use std::collections::{BTreeSet, HashMap, HashSet};
-
-use slog::slog_info;
-use slog_scope::info;
+use std::time::Instant;
 
 use quick_error::quick_error;
 
 use bytes::Bytes;
 use evmap::shallow_copy::ShallowCopy;
-use evmap::{ReadHandle, WriteHandle};
 
+use actix::clock;
 use actix_derive::Message;
 
 use crate::protocol::{Command, Error, Response};
@@ -60,6 +58,26 @@ impl ShallowCopy for Value {
     }
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Metadata {
+    pub operation_id: u64,
+    pub expiration: Option<Instant>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Item {
+    pub value: Value,
+    pub meta: Metadata,
+}
+impl ShallowCopy for Item {
+    unsafe fn shallow_copy(&mut self) -> Self {
+        Item {
+            value: self.value.shallow_copy(),
+            meta: self.meta.clone(),
+        }
+    }
+}
+
 /// A storage operation that can be processed by storage actors
 #[derive(Debug, Message)]
 #[rtype(result = "Result<Response, StorageError>")]
@@ -74,65 +92,26 @@ impl From<Command> for Operation {
 
 mod ops {
     use super::*;
-    pub fn get_string_as_bulk(values: &[Value]) -> Response {
+
+    pub fn get_metadata(values: &[Item]) -> Metadata {
         match values[0] {
-            Value::String(ref data) => Response::Bulk(data.clone()),
-            _ => Response::Error(Error::WrongType),
+            Item { ref meta, .. } => meta.clone(),
         }
     }
-}
 
-trait OperationProcessor {
-    fn reader(&self) -> Option<&ReadHandle<Key, Value>>;
-    fn writer(&mut self) -> Option<&mut WriteHandle<Key, Value>>;
-
-    fn process_operation(&mut self, operation: Operation) -> Result<Response, StorageError> {
-        use self::ops::*;
-
-        let command = operation.command;
-
-        if command.writes() {
-            let writer = self.writer().ok_or(StorageError::NoWriteAccess)?;
-
-            let response = Ok(match command {
-                Command::Set(key, value) => {
-                    writer.update(key, Value::String(value));
-                    Response::Ok
+    pub fn get_string_as_bulk(values: &[Item]) -> Response {
+        match values[0] {
+            Item {
+                value: Value::String(ref data),
+                ref meta,
+            } => {
+                if meta.expiration.map(|x| x > Instant::now()).unwrap_or(false) {
+                    Response::Bulk(data.clone())
+                } else {
+                    Response::Nil
                 }
-                Command::Del(keys) => {
-                    let mut updated = 0;
-                    for key in keys {
-                        if writer.contains_key(&key) {
-                            updated += 1;
-                            writer.empty(key);
-                        }
-                    }
-                    Response::Integer(updated)
-                }
-                Command::FlushAll(_) | Command::FlushDB(_) => {
-                    info!("Flushing the database");
-                    writer.purge();
-                    Response::Ok
-                }
-                _ => unreachable!(),
-            });
-
-            writer.refresh();
-            response
-        } else {
-            let reader = self.reader().ok_or(StorageError::NoReadAccess)?;
-
-            Ok(match command {
-                Command::Ping(None) => Response::Pong,
-                Command::Ping(Some(msg)) => Response::Bulk(msg),
-                Command::Get(key) => reader
-                    .get_and(&key, get_string_as_bulk)
-                    .unwrap_or(Response::Nil),
-                Command::Exists(keys) => Response::Integer(
-                    keys.into_iter().filter(|k| reader.contains_key(k)).count() as i64,
-                ),
-                _ => unreachable!(),
-            })
+            }
+            _ => Response::Error(Error::WrongType),
         }
     }
 }
