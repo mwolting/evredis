@@ -82,6 +82,8 @@ impl Command {
 #[derive(Debug)]
 pub enum Error {
     WrongType,
+    Syntax,
+    UnknownCommand(Bytes)
 }
 
 /// A response

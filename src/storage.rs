@@ -109,7 +109,7 @@ mod ops {
                 value: Value::String(ref data),
                 ref meta,
             } => {
-                if meta.expiration.map(|x| x > Instant::now()).unwrap_or(false) {
+                if meta.expiration.map(|x| x > Instant::now()).unwrap_or(true) {
                     Response::Bulk(data.clone())
                 } else {
                     Response::Nil

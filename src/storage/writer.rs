@@ -91,6 +91,7 @@ impl Handler<Operation> for Writer {
         let response = Ok(match operation.command {
             Command::Set(key, value, expiration, conditional) => conditional
                 .when(self.writer.contains_key(&key), || {
+                    info!("Setting key {:?}", key);
                     let expires_at = expiration.map(|x| clock::now() + x);
 
                     self.writer.update(
@@ -168,6 +169,7 @@ impl Handler<Operation> for Writer {
             _ => Err(StorageError::NoReadAccess)?,
         });
 
+        info!("COMMITTING");
         self.writer.refresh();
         response
     }

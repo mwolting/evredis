@@ -264,7 +264,7 @@ impl ProtocolCodec for Value {
                                         i += 1;
                                         expiration = Some(Self::parse_seconds(&args[i].as_ref())?);
                                     }
-                                    _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
+                                    _ => Err(DecodeError::InvalidArgument)?,
                                 }
                                 i += 1;
                             }
@@ -311,7 +311,7 @@ impl ProtocolCodec for Value {
                         }
                         _ => Err(DecodeError::UnexpectedNumberOfArguments)?,
                     },
-                    _ => Err(DecodeError::UnrecognizedCommand)?,
+                    _ => Err(DecodeError::UnrecognizedCommand(elems[0].clone()))?,
                 }))
             } else {
                 Err(DecodeError::InvalidDataType)
@@ -330,6 +330,17 @@ impl ProtocolCodec for Value {
             Response::Error(Error::WrongType) => Value::Error(Bytes::from(
                 &b"WRONGTYPE Operation against a key holding the wrong kind of value"[..],
             )),
+            Response::Error(Error::Syntax) => Value::Error(Bytes::from(
+                &b"ERR syntax error"[..],
+            )),
+            Response::Error(Error::UnknownCommand(cmd)) => {
+                let mut msg = BytesMut::from(&b"ERR unknown command '"[..]);
+                msg.reserve(cmd.len() + 1);
+                msg.put(cmd);
+                msg.put("'");
+
+                Value::Error(msg.freeze())
+            }
         };
         debug!("Encoded raw value {:?}", value);
 

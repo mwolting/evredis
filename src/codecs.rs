@@ -10,7 +10,7 @@ use slog_scope::debug;
 
 use quick_error::quick_error;
 
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use tokio_codec::{Decoder, Encoder};
 
 use crate::protocol::{Command, Response};
@@ -34,13 +34,15 @@ quick_error! {
             display("Unexpected byte: {}", byte)
         }
         /// Unrecognized Redis command
-        UnrecognizedCommand {}
+        UnrecognizedCommand(cmd: Bytes) {}
         /// Unexpected number of arguments to a command
         UnexpectedNumberOfArguments {}
         /// Invalid length value for bulk string/array
         InvalidLength {}
         /// Invalid datatype for command
         InvalidDataType {}
+        /// Invalid argument
+        InvalidArgument {}
         /// Invalid string value
         InvalidString(err: Utf8Error) {
             display("Invalid string: {}", err)

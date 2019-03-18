@@ -14,7 +14,7 @@ use tokio_codec::{Decoder, Encoder};
 use tokio_io::{AsyncRead, AsyncWrite};
 
 use crate::codecs::{DecodeError, EncodeError};
-use crate::protocol::{Command, Response};
+use crate::protocol::{Command, Response, Error};
 use crate::storage::reader::Reader;
 use crate::storage::writer::Writer;
 use crate::storage::{Operation, StorageError};
@@ -78,8 +78,8 @@ where
 
 impl<R, T> Connection<R, T>
 where
-    R: Stream<Item = Command, Error = ConnectionError>,
-    T: Sink<SinkItem = Response, SinkError = ConnectionError>,
+    R: Stream<Item = Command, Error = ConnectionError> + 'static,
+    T: Sink<SinkItem = Response, SinkError = ConnectionError> + 'static,
 {
     /// Create a new connection handler for the given input/output and reader/writer
     pub fn new(rx: R, tx: T, reader: Addr<Reader>, writer: Addr<Writer>) -> Self {
@@ -94,6 +94,18 @@ where
             writer,
         }
     }
+
+    fn send_error(&mut self, err: Error, ctx: &mut Context<Self>) {
+        let tx = self.tx.take().expect("Sink not available");
+        ctx.wait(
+            tx.send(Response::Error(err))
+                .into_actor(self)
+                .map(|sink, actor, _ctx| {
+                    actor.tx = Some(sink);
+                })
+                .map_err(|err, _, _| error!("Error while sending error response: {}", err)),
+        );
+    }
 }
 
 impl<R, T> StreamHandler<Operation, ConnectionError> for Connection<R, T>
@@ -101,10 +113,21 @@ where
     R: Stream<Item = Command, Error = ConnectionError> + 'static,
     T: Sink<SinkItem = Response, SinkError = ConnectionError> + 'static,
 {
-    fn error(&mut self, err: ConnectionError, _ctx: &mut Self::Context) -> Running {
-        slog_error!(self.logger, "Connection error: {}", err);
-
-        Running::Stop
+    fn error(&mut self, err: ConnectionError, ctx: &mut Self::Context) -> Running {
+        match err {
+            ConnectionError::CommandDecoding(DecodeError::UnexpectedNumberOfArguments) | ConnectionError::CommandDecoding(DecodeError::InvalidArgument) => {
+                self.send_error(Error::Syntax, ctx);
+                Running::Continue
+            }
+            ConnectionError::CommandDecoding(DecodeError::UnrecognizedCommand(cmd)) => {
+                self.send_error(Error::UnknownCommand(cmd), ctx);
+                Running::Continue
+            }
+            _ => {
+                slog_error!(self.logger, "Connection error: {}", err);
+                Running::Stop
+            }
+        }
     }
 
     fn handle(&mut self, operation: Operation, ctx: &mut Self::Context) {
