@@ -83,7 +83,7 @@ impl Command {
 pub enum Error {
     WrongType,
     Syntax,
-    UnknownCommand(Bytes)
+    UnknownCommand(Bytes),
 }
 
 /// A response

@@ -14,7 +14,7 @@ use tokio_codec::{Decoder, Encoder};
 use tokio_io::{AsyncRead, AsyncWrite};
 
 use crate::codecs::{DecodeError, EncodeError};
-use crate::protocol::{Command, Response, Error};
+use crate::protocol::{Command, Error, Response};
 use crate::storage::reader::Reader;
 use crate::storage::writer::Writer;
 use crate::storage::{Operation, StorageError};
@@ -115,7 +115,8 @@ where
 {
     fn error(&mut self, err: ConnectionError, ctx: &mut Self::Context) -> Running {
         match err {
-            ConnectionError::CommandDecoding(DecodeError::UnexpectedNumberOfArguments) | ConnectionError::CommandDecoding(DecodeError::InvalidArgument) => {
+            ConnectionError::CommandDecoding(DecodeError::UnexpectedNumberOfArguments)
+            | ConnectionError::CommandDecoding(DecodeError::InvalidArgument) => {
                 self.send_error(Error::Syntax, ctx);
                 Running::Continue
             }

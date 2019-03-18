@@ -330,9 +330,7 @@ impl ProtocolCodec for Value {
             Response::Error(Error::WrongType) => Value::Error(Bytes::from(
                 &b"WRONGTYPE Operation against a key holding the wrong kind of value"[..],
             )),
-            Response::Error(Error::Syntax) => Value::Error(Bytes::from(
-                &b"ERR syntax error"[..],
-            )),
+            Response::Error(Error::Syntax) => Value::Error(Bytes::from(&b"ERR syntax error"[..])),
             Response::Error(Error::UnknownCommand(cmd)) => {
                 let mut msg = BytesMut::from(&b"ERR unknown command '"[..]);
                 msg.reserve(cmd.len() + 1);
